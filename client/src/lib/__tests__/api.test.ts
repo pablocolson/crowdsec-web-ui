@@ -28,6 +28,7 @@ import {
   fetchNotifications,
   fetchNotificationsPaginated,
   fetchNotificationSettings,
+  getAuditEventsExportUrl,
   markNotificationRead,
   markNotificationsRead,
   testNotificationChannel,
@@ -384,5 +385,31 @@ describe('api helpers', () => {
     await expect(deleteNotificationRule('invalid-json')).rejects.toThrow('Failed to delete notification rule');
     await expect(markNotificationRead('no-message')).rejects.toThrow('Failed to mark notification as read');
     await expect(deleteNotification('delete-fails')).rejects.toThrow('Failed to delete notification');
+  });
+
+  test('getAuditEventsExportUrl returns correct URL with params', async () => {
+    const url = getAuditEventsExportUrl({ format: 'csv', max_events: 500, action: 'decision.delete', user: 'alice' });
+    expect(url).toContain('/api/audit-events');
+    expect(url).toContain('format=csv');
+    expect(url).toContain('max_events=500');
+    expect(url).toContain('action=decision.delete');
+    expect(url).toContain('user=alice');
+  });
+
+  test('getAuditEventsExportUrl defaults format and skips empty optional params', () => {
+    const url = getAuditEventsExportUrl({});
+    expect(url).toContain('/api/audit-events');
+    expect(url).toContain('format=csv');
+    expect(url).not.toContain('max_events');
+    expect(url).not.toContain('action');
+    expect(url).not.toContain('user');
+  });
+
+  test('getAuditEventsExportUrl includes only provided optional params', () => {
+    const url = getAuditEventsExportUrl({ outcome: 'failure' });
+    expect(url).toContain('format=csv');
+    expect(url).toContain('outcome=failure');
+    expect(url).not.toContain('action');
+    expect(url).not.toContain('user');
   });
 });
