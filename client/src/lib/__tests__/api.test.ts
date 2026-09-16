@@ -17,6 +17,7 @@ import {
   fetchAlerts,
   fetchAlertsPaginated,
   fetchAlertsForStats,
+  fetchAuditEvents,
   fetchConfig,
   fetchCombinedCrowdsecMetrics,
   fetchCrowdsecMetrics,
@@ -60,6 +61,9 @@ describe('api helpers', () => {
         if (String(input).includes('/api/alerts/1?')) {
           return Response.json([{ id: 1 }]);
         }
+        if (String(input).includes('/api/audit-events')) {
+          return Response.json({ events: [{ id: 1, time: '2025-06-01T12:00:00Z', user: 'tommy', role: 'admin', action: 'decision.delete', outcome: 'success', details: {}, targets: null }], total: 1, offset: 0, limit: 50 });
+        }
         return Response.json([{ id: 1 }]);
       }),
     );
@@ -74,6 +78,7 @@ describe('api helpers', () => {
     await expect(fetchNotificationSettings()).resolves.toEqual([{ id: 1 }]);
     await expect(fetchNotifications()).resolves.toEqual({ data: [{ id: 1 }], pagination: { page: 1, page_size: 50, total: 1, total_pages: 1, unfiltered_total: 1 }, selectable_ids: ['1'], unread_count: 1 });
     await expect(fetchNotificationsPaginated()).resolves.toEqual({ data: [{ id: 1 }], pagination: { page: 1, page_size: 50, total: 1, total_pages: 1, unfiltered_total: 1 }, selectable_ids: ['1'], unread_count: 1 });
+    await expect(fetchAuditEvents()).resolves.toEqual({ events: [{ id: 1, time: '2025-06-01T12:00:00Z', user: 'tommy', role: 'admin', action: 'decision.delete', outcome: 'success', details: {}, targets: null }], total: 1, offset: 0, limit: 50 });
     expect(String(vi.mocked(fetch).mock.calls.find(([input]) => String(input).includes('/api/alerts/1'))?.[0])).toContain('include_decisions=false');
   });
 
