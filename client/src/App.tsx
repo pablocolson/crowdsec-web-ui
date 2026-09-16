@@ -13,6 +13,8 @@ import { useI18n } from "./lib/i18n";
 const Dashboard = lazy(async () => ({ default: (await import('./pages/Dashboard')).Dashboard }));
 const Alerts = lazy(async () => ({ default: (await import('./pages/Alerts')).Alerts }));
 const Decisions = lazy(async () => ({ default: (await import('./pages/Decisions')).Decisions }));
+const SecurityEngines = lazy(async () => ({ default: (await import('./pages/SecurityEngines')).SecurityEngines }));
+const SecurityEngineDetails = lazy(async () => ({ default: (await import('./pages/SecurityEngineDetails')).SecurityEngineDetails }));
 const Metrics = lazy(async () => ({ default: (await import('./pages/Metrics')).Metrics }));
 const Notifications = lazy(async () => ({ default: (await import('./pages/Notifications')).Notifications }));
 const Settings = lazy(async () => ({ default: (await import('./pages/Settings')).Settings }));
@@ -66,6 +68,22 @@ function ProtectedAppShell() {
             element={(
               <Suspense fallback={<RouteFallback />}>
                 <Decisions />
+              </Suspense>
+            )}
+          />
+          <Route
+            path="security-engines"
+            element={(
+              <Suspense fallback={<RouteFallback />}>
+                <SecurityEngines />
+              </Suspense>
+            )}
+          />
+          <Route
+            path="security-engines/:id"
+            element={(
+              <Suspense fallback={<RouteFallback />}>
+                <SecurityEngineDetails />
               </Suspense>
             )}
           />

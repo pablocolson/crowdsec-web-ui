@@ -5,6 +5,7 @@ import { isSimulatedDecision, parseSimulationFilter } from "../lib/simulation";
 import { useRefresh } from "../contexts/useRefresh";
 import { Badge } from "../components/ui/Badge";
 import { Modal } from "../components/ui/Modal";
+import { CopyableText } from "../components/ui/CopyableText";
 import { HighlightedSearchInput } from "../components/HighlightedSearchInput";
 import { CollapsibleSearchControls } from "../components/CollapsibleSearchControls";
 import { SearchSyntaxModal } from "../components/SearchSyntaxModal";
@@ -1580,8 +1581,8 @@ export function Decisions() {
                                                         );
                                                     case 'source':
                                                         return (
-                                                            <td key={columnId} className="px-6 py-4 text-sm font-mono text-gray-900 dark:text-gray-100 max-w-[200px] truncate" title={decision.value}>
-                                                                {decision.value}
+                                                            <td key={columnId} className="px-6 py-4 text-sm font-mono text-gray-900 dark:text-gray-100 max-w-[200px] overflow-hidden" title={decision.value}>
+                                                                {decision.value ? <CopyableText value={decision.value} /> : "-"}
                                                             </td>
                                                         );
                                                     case 'action':

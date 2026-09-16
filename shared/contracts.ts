@@ -65,7 +65,33 @@ export interface InstanceSummary {
   sync_status: SyncStatus;
   prometheus: PrometheusEndpointSummary[];
   sync_overrides?: Record<string, string | number | boolean>;
+  /** Cached alert count for this instance (from the local SQLite cache, not a live LAPI call). */
+  alerts_count?: number;
+  /** Cached decision count for this instance (from the local SQLite cache, not a live LAPI call). */
+  decisions_count?: number;
+  /** User-defined labels stored locally (not synced with CrowdSec). */
+  tags?: string[];
+  /** True when the instance was archived (hidden from the default Security Engines list). */
+  archived?: boolean;
 }
+
+export interface UpdateInstanceMetadataRequest {
+  tags?: string[];
+  archived?: boolean;
+}
+
+export interface InstanceMetadataResponse {
+  success: true;
+  instance_id: string;
+  tags: string[];
+  archived: boolean;
+}
+
+/** Shared with the client so tag inputs can enforce/display the same limits the server applies. */
+export const INSTANCE_TAG_LIMITS = {
+  maxTags: 20,
+  maxTagLength: 40,
+} as const;
 
 export type TableColumnPreferenceTable = 'alerts' | 'decisions';
 export type AlertTableColumnId = 'id' | 'instance' | 'time' | 'scenario' | 'kind' | 'target' | 'country' | 'region' | 'city' | 'as' | 'source' | 'machine' | 'origin' | 'decisions';

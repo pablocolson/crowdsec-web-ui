@@ -84,6 +84,7 @@ import {
   saveMetricsSidebarVisible,
   savePersistedConfig,
 } from './app/preferences';
+import { loadInstanceMetadata, saveInstanceMetadata } from './app/instance-metadata';
 import {
   applySimulationModeToAlert,
   emptyAlertDecisionSummary,
@@ -1325,6 +1326,7 @@ export function createApp(options: CreateAppOptions = {}): AppController {
     isValidIpOrRange,
     lapiClient,
     lapiClients,
+    loadInstanceMetadata,
     lookbackHours,
     markDuplicateDecisions,
     normalizeAlertDetail,
@@ -1349,6 +1351,7 @@ export function createApp(options: CreateAppOptions = {}): AppController {
     resolveOperationInstances,
     runConsistentDatabaseRefresh,
     runNotificationEvaluation,
+    saveInstanceMetadata,
     saveLanguagePreference,
     saveMetricsSidebarVisible,
     savePersistedConfig,

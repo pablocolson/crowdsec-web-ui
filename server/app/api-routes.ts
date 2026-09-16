@@ -11,6 +11,7 @@ import type {
   InstanceEntityRef,
   StatsAlert,
   StatsDecision,
+  UpdateInstanceMetadataRequest,
   UpdateManualRefreshSettingRequest,
   UpdateMetricsSidebarPreferenceRequest,
   UpsertNotificationChannelRequest,
@@ -123,6 +124,7 @@ export function registerApiRoutes(dependencies: ApiRouteDependencies): void {
     isValidIpOrRange,
     lapiClient,
     lapiClients,
+    loadInstanceMetadata,
     lookbackHours,
     markDuplicateDecisions,
     normalizeAlertDetail,
@@ -148,6 +150,7 @@ export function registerApiRoutes(dependencies: ApiRouteDependencies): void {
     resolveOperationInstances,
     runConsistentDatabaseRefresh,
     runNotificationEvaluation,
+    saveInstanceMetadata,
     saveLanguagePreference,
     saveMetricsSidebarVisible,
     savePersistedConfig,
@@ -611,6 +614,23 @@ app.delete(`${config.basePath}/api/instances/:instanceId/decisions/:id`, ensureA
   }
 });
 
+function buildInstanceSummary(instance: RuntimeConfig['instances'][number]) {
+  const metadata = loadInstanceMetadata(database, instance.id);
+  return {
+    id: instance.id,
+    name: instance.name,
+    icon: instance.icon,
+    lapi_status: lapiClients.get(instance.id)!.getStatus(),
+    sync_status: { ...(instanceSyncStatuses.get(instance.id) || syncStatus) },
+    prometheus: instance.prometheus.map((endpoint) => ({ id: endpoint.id, name: endpoint.name, icon: endpoint.icon })),
+    sync_overrides: { ...instance.sync },
+    alerts_count: database.countAlerts(instance.id),
+    decisions_count: database.countDecisions(instance.id),
+    tags: metadata.tags,
+    archived: metadata.archived,
+  };
+}
+
 app.get(`${config.basePath}/api/config`, ensureAuth, (context) => {
   const hours = lookbackHours(config.lookbackPeriod);
   const payload: ConfigResponse = {
@@ -621,15 +641,7 @@ app.get(`${config.basePath}/api/config`, ensureAuth, (context) => {
     manual_refresh_enabled: state.manualRefreshEnabled,
     current_interval_name: getIntervalName(state.refreshIntervalMs),
     lapi_status: lapiClient.getStatus(),
-    instances: config.instances.map((instance) => ({
-      id: instance.id,
-      name: instance.name,
-      icon: instance.icon,
-      lapi_status: lapiClients.get(instance.id)!.getStatus(),
-      sync_status: { ...(instanceSyncStatuses.get(instance.id) || syncStatus) },
-      prometheus: instance.prometheus.map((endpoint) => ({ id: endpoint.id, name: endpoint.name, icon: endpoint.icon })),
-      sync_overrides: { ...instance.sync },
-    })),
+    instances: config.instances.map(buildInstanceSummary),
     aggregate_lapi_status: aggregateLapiStatus(),
     sync_status: aggregateHistoricalSyncStatus(),
     cache_last_update: state.cacheRefreshCompletedAt,
@@ -650,17 +662,58 @@ app.get(`${config.basePath}/api/config`, ensureAuth, (context) => {
 });
 
 app.get(`${config.basePath}/api/instances`, ensureAuth, (context) => context.json({
-  data: config.instances.map((instance) => ({
-    id: instance.id,
-    name: instance.name,
-    icon: instance.icon,
-    lapi_status: lapiClients.get(instance.id)!.getStatus(),
-    sync_status: { ...(instanceSyncStatuses.get(instance.id) || syncStatus) },
-    prometheus: instance.prometheus.map((endpoint) => ({ id: endpoint.id, name: endpoint.name, icon: endpoint.icon })),
-    sync_overrides: { ...instance.sync },
-  })),
+  data: config.instances.map(buildInstanceSummary),
   aggregate_status: aggregateLapiStatus(),
 }));
+
+app.put(`${config.basePath}/api/instances/:instanceId/metadata`, ensureAuth, async (context) => {
+  const readOnlyResponse = ensureCanManageSettings(context);
+  if (readOnlyResponse) return readOnlyResponse;
+
+  const instanceId = String(context.req.param('instanceId'));
+  const instance = config.instances.find((candidate) => candidate.id === instanceId);
+  if (!instance) {
+    return context.json({ error: 'Unknown CrowdSec instance' }, 404);
+  }
+
+  let rawBody: unknown;
+  try {
+    rawBody = await context.req.json();
+  } catch {
+    return context.json({ error: 'A JSON request body is required' }, 400);
+  }
+  if (typeof rawBody !== 'object' || rawBody === null || Array.isArray(rawBody)) {
+    return context.json({ error: 'A JSON object body is required' }, 400);
+  }
+  const body = rawBody as UpdateInstanceMetadataRequest;
+  if (body.tags !== undefined && !Array.isArray(body.tags)) {
+    return context.json({ error: 'tags must be an array of strings' }, 400);
+  }
+  if (body.archived !== undefined && typeof body.archived !== 'boolean') {
+    return context.json({ error: 'archived must be a boolean' }, 400);
+  }
+
+  try {
+    const metadata = await syncWorker.runExclusive(() => saveInstanceMetadata(database, instanceId, body));
+    auditLog.record(context, {
+      action: 'instance.metadata.update',
+      instance_id: instanceId,
+      instance: instance.name,
+      values: [`tags=${metadata.tags.join('|')}`, `archived=${metadata.archived}`],
+      outcome: 'success',
+    });
+    return context.json({ success: true, instance_id: instanceId, ...metadata });
+  } catch (error: any) {
+    console.error(`Error updating metadata for instance ${instanceId}:`, error.message);
+    auditLog.record(context, {
+      action: 'instance.metadata.update',
+      instance_id: instanceId,
+      instance: instance.name,
+      outcome: 'failure',
+    });
+    return context.json({ error: 'Failed to update instance metadata' }, 500);
+  }
+});
 
 app.get(`${config.basePath}/api/metrics/crowdsec`, ensureAuth, async (context) => {
   const endpoint = primaryInstance.prometheus[0];
