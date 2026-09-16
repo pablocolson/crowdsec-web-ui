@@ -813,5 +813,9 @@
   "pages.securityEngineDetails.archiveConfirmTitle": "Archiver ce moteur de sécurité ?",
   "pages.securityEngineDetails.archiveConfirmDescription": "Il sera masqué de la liste par défaut des moteurs de sécurité. Vous pourrez le restaurer à tout moment.",
   "pages.securityEngineDetails.archiveFailed": "Échec de la mise à jour du statut d'archivage",
-  "pages.securityEngineDetails.metricsUnavailable": "Les métriques Prometheus ne sont pas configurées pour ce moteur de sécurité."
+  "pages.securityEngineDetails.metricsUnavailable": "Les métriques Prometheus ne sont pas configurées pour ce moteur de sécurité.",
+  "pages.securityEngineDetails.loadError": "Échec du chargement de ce moteur de sécurité.",
+  "pages.securityEngineDetails.tagsLimitReached": "Maximum de {max} tags atteint",
+  "pages.securityEngineDetails.readOnlyHint": "Le mode lecture seule est activé",
+  "common.retry": "Réessayer"
 }

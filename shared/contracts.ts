@@ -87,6 +87,12 @@ export interface InstanceMetadataResponse {
   archived: boolean;
 }
 
+/** Shared with the client so tag inputs can enforce/display the same limits the server applies. */
+export const INSTANCE_TAG_LIMITS = {
+  maxTags: 20,
+  maxTagLength: 40,
+} as const;
+
 export type TableColumnPreferenceTable = 'alerts' | 'decisions';
 export type AlertTableColumnId = 'id' | 'instance' | 'time' | 'scenario' | 'kind' | 'target' | 'country' | 'region' | 'city' | 'as' | 'source' | 'machine' | 'origin' | 'decisions';
 export type DecisionTableColumnId = 'id' | 'instance' | 'time' | 'scenario' | 'kind' | 'target' | 'country' | 'region' | 'city' | 'as' | 'source' | 'action' | 'expiration' | 'machine' | 'origin' | 'alert';

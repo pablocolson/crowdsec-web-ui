@@ -112,6 +112,7 @@ export function SecurityEngines() {
                             type="button"
                             onClick={() => setViewMode('cards')}
                             aria-pressed={viewMode === 'cards'}
+                            aria-label={t('pages.securityEngines.cardView')}
                             title={t('pages.securityEngines.cardView')}
                             className={`flex items-center gap-1.5 rounded-l-lg px-3 py-2 text-sm font-medium transition-colors ${viewMode === 'cards'
                                 ? 'bg-primary-600 text-white'
@@ -124,6 +125,7 @@ export function SecurityEngines() {
                             type="button"
                             onClick={() => setViewMode('table')}
                             aria-pressed={viewMode === 'table'}
+                            aria-label={t('pages.securityEngines.tableView')}
                             title={t('pages.securityEngines.tableView')}
                             className={`flex items-center gap-1.5 rounded-r-lg border-l border-gray-300 px-3 py-2 text-sm font-medium transition-colors dark:border-gray-600 ${viewMode === 'table'
                                 ? 'bg-primary-600 text-white'
@@ -182,8 +184,12 @@ export function SecurityEngines() {
                                     <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                                         {instance.lapi_status.lastCheck ? formatDateTime(instance.lapi_status.lastCheck) : '-'}
                                         {isInactive(instance) && (
-                                            <span className="ml-2 text-xs text-amber-600 dark:text-amber-400" title={t('pages.securityEngines.inactiveNotice')}>
-                                                ●
+                                            <span
+                                                className="ml-2 inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"
+                                                title={t('pages.securityEngines.inactiveNotice')}
+                                            >
+                                                <span aria-hidden="true">●</span>
+                                                <span className="sr-only">{t('pages.securityEngines.inactiveNotice')}</span>
                                             </span>
                                         )}
                                     </td>

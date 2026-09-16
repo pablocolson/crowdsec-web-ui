@@ -1,4 +1,4 @@
-import { useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { useOptionalToast } from '../../contexts/useToast';
 import { useI18n } from '../../lib/i18n';
@@ -21,6 +21,13 @@ export function CopyableText({ value, children, className, label }: CopyableText
     const [copied, setCopied] = useState(false);
     const toast = useOptionalToast();
     const { t } = useI18n();
+    const resetTimeoutRef = useRef<number | null>(null);
+
+    useEffect(() => () => {
+        if (resetTimeoutRef.current !== null) {
+            window.clearTimeout(resetTimeoutRef.current);
+        }
+    }, []);
 
     const handleCopy = async (event: MouseEvent<HTMLButtonElement>) => {
         event.stopPropagation();
@@ -40,7 +47,13 @@ export function CopyableText({ value, children, className, label }: CopyableText
 
         setCopied(true);
         toast?.addToast(t('common.copiedToClipboard'), 'success', 2000);
-        window.setTimeout(() => setCopied(false), 2000);
+        if (resetTimeoutRef.current !== null) {
+            window.clearTimeout(resetTimeoutRef.current);
+        }
+        resetTimeoutRef.current = window.setTimeout(() => {
+            resetTimeoutRef.current = null;
+            setCopied(false);
+        }, 2000);
     };
 
     return (

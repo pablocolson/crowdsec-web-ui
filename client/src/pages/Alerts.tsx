@@ -1709,7 +1709,7 @@ export function Alerts() {
                                                         );
                                                     case 'source':
                                                         return (
-                                                            <td key={columnId} className="px-6 py-4 text-sm font-mono text-gray-900 dark:text-gray-100 max-w-[200px]" title={sourceValue}>
+                                                            <td key={columnId} className="px-6 py-4 text-sm font-mono text-gray-900 dark:text-gray-100 max-w-[200px] overflow-hidden" title={sourceValue}>
                                                                 {sourceValue ? <CopyableText value={sourceValue} /> : "-"}
                                                             </td>
                                                         );

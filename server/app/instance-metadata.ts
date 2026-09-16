@@ -1,7 +1,7 @@
+import { INSTANCE_TAG_LIMITS } from '../../shared/contracts';
 import type { CrowdsecDatabase } from '../database';
 
-const MAX_TAGS = 20;
-const MAX_TAG_LENGTH = 40;
+const { maxTags: MAX_TAGS, maxTagLength: MAX_TAG_LENGTH } = INSTANCE_TAG_LIMITS;
 
 export interface InstanceMetadata {
   tags: string[];

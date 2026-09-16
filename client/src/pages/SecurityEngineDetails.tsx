@@ -14,30 +14,30 @@ import {
 import { fetchConfig, fetchCrowdsecMetrics, updateInstanceMetadata } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { useDateTime } from '../lib/dateTime';
+import { useRefresh } from '../contexts/useRefresh';
 import { useOptionalToast } from '../contexts/useToast';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { CopyableText } from '../components/ui/CopyableText';
 import { GroupListEditor } from './Settings';
+import { bouncerModeVariant } from '../lib/metricsDisplay';
+import { INSTANCE_TAG_LIMITS } from '../../../shared/contracts';
 import type { CrowdsecMetricsResponse, InstanceSummary } from '../types';
-
-function bouncerModeVariant(mode: string | undefined): 'success' | 'info' | 'warning' {
-    if (mode === 'stream') return 'info';
-    if (mode === 'mixed') return 'warning';
-    return 'success';
-}
 
 export function SecurityEngineDetails() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { t } = useI18n();
     const { formatDateTime } = useDateTime();
+    const { refreshSignal } = useRefresh();
     const toast = useOptionalToast();
 
     const [instance, setInstance] = useState<InstanceSummary | null>(null);
+    const [canManageSettings, setCanManageSettings] = useState(true);
     const [loading, setLoading] = useState(true);
     const [notFound, setNotFound] = useState(false);
+    const [loadError, setLoadError] = useState(false);
 
     const [tagDraft, setTagDraft] = useState('');
     const [savingTags, setSavingTags] = useState(false);
@@ -54,8 +54,11 @@ export function SecurityEngineDetails() {
             const found = (config.instances || []).find((candidate) => candidate.id === id) || null;
             setInstance(found);
             setNotFound(!found);
+            setLoadError(false);
+            setCanManageSettings(config.permissions?.can_manage_settings !== false);
         } catch (error) {
             console.error('Failed to load security engine', error);
+            setLoadError(true);
         } finally {
             setLoading(false);
         }
@@ -65,23 +68,34 @@ export function SecurityEngineDetails() {
         queueMicrotask(() => {
             void loadInstance();
         });
-    }, [loadInstance]);
+    }, [loadInstance, refreshSignal]);
 
-    const primaryEndpoint = instance?.prometheus[0];
+    // Navigating away is a side effect of a failed lookup, not something to do
+    // during render: doing it inline would both warn ("Cannot update a
+    // component while rendering a different component") and would fire even
+    // while a fetch is merely in flight.
+    useEffect(() => {
+        if (notFound) {
+            navigate('/security-engines', { replace: true });
+        }
+    }, [notFound, navigate]);
+
+    const instanceId = instance?.id;
+    const primaryEndpointId = instance?.prometheus[0]?.id;
 
     useEffect(() => {
         let cancelled = false;
 
         queueMicrotask(() => {
             if (cancelled) return;
-            if (!instance || !primaryEndpoint) {
+            if (!instanceId || !primaryEndpointId) {
                 setMetrics(null);
                 return;
             }
 
             setMetricsLoading(true);
             setMetricsError(null);
-            fetchCrowdsecMetrics(instance.id, primaryEndpoint.id)
+            fetchCrowdsecMetrics(instanceId, primaryEndpointId)
                 .then((response) => {
                     if (!cancelled) setMetrics(response);
                 })
@@ -96,17 +110,30 @@ export function SecurityEngineDetails() {
         return () => {
             cancelled = true;
         };
-    }, [instance, primaryEndpoint]);
+        // Re-fetching only needs to happen when the engine or its Prometheus
+        // endpoint actually changes, not on every setInstance() call (tag
+        // edits and archive toggles create a new instance object reference).
+    }, [instanceId, primaryEndpointId]);
 
     const tags = useMemo(() => instance?.tags ?? [], [instance]);
+    const tagLimitReached = tags.length >= INSTANCE_TAG_LIMITS.maxTags;
+    const tagControlsDisabled = savingTags || !canManageSettings;
+
+    const handleTagDraftChange = useCallback((value: string) => {
+        setTagDraft(value.slice(0, INSTANCE_TAG_LIMITS.maxTagLength));
+    }, []);
 
     const handleAddTag = useCallback(async () => {
         if (!instance || !tagDraft.trim()) return;
+        if (tagLimitReached) {
+            toast?.addToast(t('pages.securityEngineDetails.tagsLimitReached', { max: INSTANCE_TAG_LIMITS.maxTags }), 'danger');
+            return;
+        }
         const nextTags = [...tags, tagDraft.trim()];
         setSavingTags(true);
         try {
             const result = await updateInstanceMetadata(instance.id, { tags: nextTags });
-            setInstance((current) => (current ? { ...current, tags: result.tags } : current));
+            setInstance((current) => (current && current.id === result.instance_id ? { ...current, tags: result.tags } : current));
             setTagDraft('');
         } catch (error) {
             console.error('Failed to add tag', error);
@@ -114,7 +141,7 @@ export function SecurityEngineDetails() {
         } finally {
             setSavingTags(false);
         }
-    }, [instance, tagDraft, tags, toast, t]);
+    }, [instance, tagDraft, tagLimitReached, tags, toast, t]);
 
     const handleRemoveTag = useCallback(async (tag: string) => {
         if (!instance) return;
@@ -122,7 +149,7 @@ export function SecurityEngineDetails() {
         setSavingTags(true);
         try {
             const result = await updateInstanceMetadata(instance.id, { tags: nextTags });
-            setInstance((current) => (current ? { ...current, tags: result.tags } : current));
+            setInstance((current) => (current && current.id === result.instance_id ? { ...current, tags: result.tags } : current));
         } catch (error) {
             console.error('Failed to remove tag', error);
             toast?.addToast(t('pages.securityEngineDetails.tagsSaveFailed'), 'danger');
@@ -136,7 +163,7 @@ export function SecurityEngineDetails() {
         setSavingArchived(true);
         try {
             const result = await updateInstanceMetadata(instance.id, { archived });
-            setInstance((current) => (current ? { ...current, archived: result.archived } : current));
+            setInstance((current) => (current && current.id === result.instance_id ? { ...current, archived: result.archived } : current));
         } catch (error) {
             console.error('Failed to update archive status', error);
             toast?.addToast(t('pages.securityEngineDetails.archiveFailed'), 'danger');
@@ -146,17 +173,39 @@ export function SecurityEngineDetails() {
         }
     }, [instance, toast, t]);
 
+    const handleRetry = useCallback(() => {
+        setLoading(true);
+        void loadInstance();
+    }, [loadInstance]);
+
     if (loading) {
         return <div className="p-8 text-center text-gray-500">{t('app.loading')}</div>;
     }
 
+    if (loadError) {
+        return (
+            <div className="space-y-4 p-8 text-center">
+                <p className="text-gray-500 dark:text-gray-400">{t('pages.securityEngineDetails.loadError')}</p>
+                <button
+                    type="button"
+                    onClick={handleRetry}
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+                >
+                    {t('common.retry')}
+                </button>
+            </div>
+        );
+    }
+
     if (notFound || !instance) {
-        navigate('/security-engines', { replace: true });
+        // The redirect effect above handles navigation; render nothing while
+        // it takes effect on the next tick.
         return null;
     }
 
     const isOnline = instance.lapi_status.isConnected;
     const instanceQuery = `?instance=${encodeURIComponent(instance.id)}`;
+    const archiveControlsDisabled = savingArchived || !canManageSettings;
 
     return (
         <div className="space-y-6">
@@ -182,7 +231,8 @@ export function SecurityEngineDetails() {
                             <button
                                 type="button"
                                 onClick={() => void handleSetArchived(false)}
-                                disabled={savingArchived}
+                                disabled={archiveControlsDisabled}
+                                title={canManageSettings ? undefined : t('pages.securityEngineDetails.readOnlyHint')}
                                 className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
                             >
                                 <ArchiveRestore className="h-4 w-4" />
@@ -192,7 +242,8 @@ export function SecurityEngineDetails() {
                             <button
                                 type="button"
                                 onClick={() => setConfirmArchiveOpen(true)}
-                                disabled={savingArchived}
+                                disabled={archiveControlsDisabled}
+                                title={canManageSettings ? undefined : t('pages.securityEngineDetails.readOnlyHint')}
                                 className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
                             >
                                 <PackageOpen className="h-4 w-4" />
@@ -249,11 +300,13 @@ export function SecurityEngineDetails() {
                         label={t('pages.securityEngineDetails.tagsTitle')}
                         groups={tags}
                         draft={tagDraft}
-                        onDraftChange={setTagDraft}
+                        onDraftChange={handleTagDraftChange}
                         onAdd={() => void handleAddTag()}
                         onRemove={(tag) => void handleRemoveTag(tag)}
-                        disabled={savingTags}
-                        placeholder={t('pages.securityEngineDetails.tagPlaceholder')}
+                        disabled={tagControlsDisabled}
+                        placeholder={tagLimitReached
+                            ? t('pages.securityEngineDetails.tagsLimitReached', { max: INSTANCE_TAG_LIMITS.maxTags })
+                            : t('pages.securityEngineDetails.tagPlaceholder')}
                         addLabel={t('common.addTag')}
                         emptyLabel={t('common.noTags')}
                         removeLabel={(tag) => `${t('common.remove')} ${tag}`}
@@ -271,7 +324,7 @@ export function SecurityEngineDetails() {
                     <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('pages.metrics.bouncersDescription')}</p>
                 </CardHeader>
                 <CardContent>
-                    {!primaryEndpoint ? (
+                    {!primaryEndpointId ? (
                         <p className="text-sm text-gray-500 dark:text-gray-400">{t('pages.securityEngineDetails.metricsUnavailable')}</p>
                     ) : metricsLoading ? (
                         <p className="text-sm text-gray-500 dark:text-gray-400">{t('common.loadingChart')}</p>
@@ -304,7 +357,7 @@ export function SecurityEngineDetails() {
                     <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('pages.metrics.scenariosDescription')}</p>
                 </CardHeader>
                 <CardContent>
-                    {!primaryEndpoint ? (
+                    {!primaryEndpointId ? (
                         <p className="text-sm text-gray-500 dark:text-gray-400">{t('pages.securityEngineDetails.metricsUnavailable')}</p>
                     ) : metricsLoading ? (
                         <p className="text-sm text-gray-500 dark:text-gray-400">{t('common.loadingChart')}</p>

@@ -27,10 +27,10 @@ import { Switch } from '../components/ui/Switch';
 import { DropdownSelect } from '../components/ui/DropdownSelect';
 import { InstanceIcon } from '../components/InstanceIcon';
 import { useI18n } from '../lib/i18n';
+import { bouncerModeVariant } from '../lib/metricsDisplay';
 import type {
   CrowdsecMetricsApiEntity,
   CrowdsecMetricsAppsecEngine,
-  CrowdsecMetricsBouncerMode,
   CrowdsecMetricsLapiRoute,
   CrowdsecMetricsParserNode,
   CrowdsecMetricsParserSource,
@@ -363,12 +363,7 @@ function RouteActivityList({ routes, emptyMessage }: { routes?: CrowdsecMetricsR
   );
 }
 
-function bouncerModeVariant(mode: CrowdsecMetricsBouncerMode | undefined): 'success' | 'info' | 'warning' | 'secondary' {
-  if (mode === 'live') return 'success';
-  if (mode === 'stream') return 'info';
-  if (mode === 'mixed') return 'warning';
-  return 'secondary';
-}
+
 
 function EntityList({
   title,

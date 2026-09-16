@@ -814,5 +814,9 @@
   "pages.securityEngineDetails.archiveConfirmTitle": "Archive this security engine?",
   "pages.securityEngineDetails.archiveConfirmDescription": "It will be hidden from the default Security Engines list. You can restore it at any time.",
   "pages.securityEngineDetails.archiveFailed": "Failed to update archive status",
-  "pages.securityEngineDetails.metricsUnavailable": "Prometheus metrics are not configured for this security engine."
+  "pages.securityEngineDetails.metricsUnavailable": "Prometheus metrics are not configured for this security engine.",
+  "pages.securityEngineDetails.loadError": "Failed to load this security engine.",
+  "pages.securityEngineDetails.tagsLimitReached": "Maximum of {max} tags reached",
+  "pages.securityEngineDetails.readOnlyHint": "Read-only mode is enabled",
+  "common.retry": "Retry"
 }

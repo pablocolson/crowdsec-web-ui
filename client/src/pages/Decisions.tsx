@@ -1581,7 +1581,7 @@ export function Decisions() {
                                                         );
                                                     case 'source':
                                                         return (
-                                                            <td key={columnId} className="px-6 py-4 text-sm font-mono text-gray-900 dark:text-gray-100 max-w-[200px]" title={decision.value}>
+                                                            <td key={columnId} className="px-6 py-4 text-sm font-mono text-gray-900 dark:text-gray-100 max-w-[200px] overflow-hidden" title={decision.value}>
                                                                 {decision.value ? <CopyableText value={decision.value} /> : "-"}
                                                             </td>
                                                         );
