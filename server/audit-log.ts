@@ -28,11 +28,10 @@ export interface CreateAuditLoggerOptions {
   getActor: (context: HonoContext) => AuditActor | null;
   writeDatabase?: (operation: () => void) => void;
   insertAuditStatement?: { run: (params: Record<string, unknown>) => void };
-  auditEventsRetentionDays?: number;
 }
 
 export function createAuditLogger(options: CreateAuditLoggerOptions): AuditLogger {
-  const { enabled, logFile, getActor, writeDatabase, insertAuditStatement, auditEventsRetentionDays } = options;
+  const { enabled, logFile, getActor, writeDatabase, insertAuditStatement } = options;
   let fileWritable = Boolean(logFile);
 
   if (enabled && logFile) {

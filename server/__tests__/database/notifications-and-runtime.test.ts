@@ -237,11 +237,15 @@ describe('CrowdsecDatabase notifications and runtime', () => {
     expect(db.countAuditEvents({ action: 'decision.delete' })).toBe(1);
     expect(db.countAuditEvents({ outcome: 'success' })).toBe(1);
     expect(db.countAuditEvents({ since: '2025-06-01T12:00:30.000Z' })).toBe(1);
+
     expect(db.countAuditEvents({ until: '2025-06-01T12:00:30.000Z' })).toBe(1);
 
     const filteredPage = db.listAuditEventsPage(0, 10, { user: 'alice' });
     expect(filteredPage).toHaveLength(1);
     expect(filteredPage[0].user).toBe('alice');
+
+    expect(db.purgeAuditEvents('2025-06-01T12:00:30.000Z')).toBe(1);
+    expect(db.countAuditEvents()).toBe(1);
 
     db.close();
   });

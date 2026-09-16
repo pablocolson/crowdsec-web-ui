@@ -1709,6 +1709,10 @@ export class CrowdsecDatabase {
     return changes;
   }
 
+  purgeAuditEvents(before: string): number {
+    return this.db.prepare('DELETE FROM audit_events WHERE time < ?').run(before).changes;
+  }
+
   getAlertDeletionTombstone(alertId: string | number): PendingAlertDeletionRow | null {
     return (this.db.prepare(`
       SELECT alert_id, decision_ids_json, requested_at, decisions_deleted_at,
