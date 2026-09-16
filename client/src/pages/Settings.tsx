@@ -1174,7 +1174,7 @@ export function Settings() {
     );
 }
 
-function GroupListEditor({
+export function GroupListEditor({
     id,
     label,
     groups,

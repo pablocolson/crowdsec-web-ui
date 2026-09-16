@@ -12,6 +12,7 @@ import type {
   FacetField,
   FacetResponse,
   InstanceEntityRef,
+  InstanceMetadataResponse,
   MultiInstanceOperationResponse,
   NotificationChannel,
   NotificationListResponse,
@@ -21,6 +22,7 @@ import type {
   SlimAlert,
   StatsAlert,
   StatsDecision,
+  UpdateInstanceMetadataRequest,
   UpdateMetricsSidebarPreferenceRequest,
   UpdateManualRefreshSettingRequest,
   UpsertNotificationChannelRequest,
@@ -322,6 +324,19 @@ export async function addDecision(data: AddDecisionRequest): Promise<unknown> {
 
 export async function fetchConfig(): Promise<ConfigResponse> {
     return fetchJson<ConfigResponse>('/api/config', undefined, 'Failed to fetch config');
+}
+
+export async function updateInstanceMetadata(
+    instanceId: string,
+    data: UpdateInstanceMetadataRequest,
+): Promise<InstanceMetadataResponse> {
+    const result = await sendJson<InstanceMetadataResponse>(`/api/instances/${encodeURIComponent(instanceId)}/metadata`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    }, 'Failed to update security engine metadata');
+    clearGetCaches();
+    return result;
 }
 
 export async function fetchCrowdsecMetrics(instanceId?: string, endpointId?: string): Promise<CrowdsecMetricsResponse> {

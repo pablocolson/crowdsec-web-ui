@@ -65,6 +65,26 @@ export interface InstanceSummary {
   sync_status: SyncStatus;
   prometheus: PrometheusEndpointSummary[];
   sync_overrides?: Record<string, string | number | boolean>;
+  /** Cached alert count for this instance (from the local SQLite cache, not a live LAPI call). */
+  alerts_count?: number;
+  /** Cached decision count for this instance (from the local SQLite cache, not a live LAPI call). */
+  decisions_count?: number;
+  /** User-defined labels stored locally (not synced with CrowdSec). */
+  tags?: string[];
+  /** True when the instance was archived (hidden from the default Security Engines list). */
+  archived?: boolean;
+}
+
+export interface UpdateInstanceMetadataRequest {
+  tags?: string[];
+  archived?: boolean;
+}
+
+export interface InstanceMetadataResponse {
+  success: true;
+  instance_id: string;
+  tags: string[];
+  archived: boolean;
 }
 
 export type TableColumnPreferenceTable = 'alerts' | 'decisions';
