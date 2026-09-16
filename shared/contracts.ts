@@ -821,3 +821,65 @@ export interface BulkDeleteResult {
 export interface DeleteResult {
   message: string;
 }
+
+export interface AuditEvent {
+  id: number;
+  time: string;
+  user: string;
+  role: string | null;
+  action: string;
+  outcome: string;
+  details: Record<string, unknown>;
+  targets: Record<string, unknown> | null;
+}
+
+export interface AuditEventsResponse {
+  events: AuditEvent[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface InvestigationInvestigation {
+  alertInternalId: number;
+  status: string;
+  assignedTo: string | null;
+  ticketRef: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy: string;
+}
+
+export interface InvestigationNote {
+  id: number;
+  alertInternalId: number;
+  content: string;
+  author: string;
+  createdAt: string;
+}
+
+export interface InvestigationResponse {
+  investigation: InvestigationInvestigation | null;
+  notes: InvestigationNote[];
+}
+
+export interface InstanceHealth {
+  state: 'healthy' | 'degraded' | 'offline' | 'unknown';
+  lapi: { isConnected: boolean; lastCheck: string | null; lastError: string | null; offline_since: string | null };
+  sync: { isSyncing: boolean; state: string; startedAt: string | null; completedAt: string | null; errors?: string[] };
+  lastSyncAt: string | null;
+  lastError: string | null;
+  alertsCount: number;
+  decisionsCount: number;
+}
+
+export interface InstanceHealthSummary extends InstanceHealth {
+  id: string;
+  name: string;
+  icon?: string;
+}
+
+export interface InstancesHealthResponse {
+  instances: InstanceHealthSummary[];
+}

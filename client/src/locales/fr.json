@@ -817,5 +817,17 @@
   "pages.securityEngineDetails.loadError": "Échec du chargement de ce moteur de sécurité.",
   "pages.securityEngineDetails.tagsLimitReached": "Maximum de {max} tags atteint",
   "pages.securityEngineDetails.readOnlyHint": "Le mode lecture seule est activé",
+  "pages.auditLog.title": "Journal d'audit",
+  "pages.auditLog.filters": "Filtres",
+  "pages.auditLog.user": "Utilisateur",
+  "pages.auditLog.action": "Action",
+  "pages.auditLog.outcome": "Résultat",
+  "pages.auditLog.time": "Heure",
+  "pages.auditLog.details": "Détails",
+  "pages.auditLog.noEvents": "Aucun événement d'audit pour le moment",
+  "pages.auditLog.noResults": "Aucun événement ne correspond aux filtres",
+  "pages.auditLog.filterUserPlaceholder": "Filtrer par utilisateur",
+  "pages.auditLog.since": "Depuis",
+  "pages.auditLog.until": "Jusqu'à",
   "common.retry": "Réessayer"
 }

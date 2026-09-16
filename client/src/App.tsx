@@ -20,6 +20,7 @@ const Notifications = lazy(async () => ({ default: (await import('./pages/Notifi
 const Settings = lazy(async () => ({ default: (await import('./pages/Settings')).Settings }));
 const Login = lazy(async () => ({ default: (await import('./pages/Login')).Login }));
 const Setup = lazy(async () => ({ default: (await import('./pages/Setup')).Setup }));
+const AuditLog = lazy(async () => ({ default: (await import('./pages/AuditLog')).AuditLog }));
 
 function RouteFallback() {
   const { t } = useI18n();
@@ -100,6 +101,14 @@ function ProtectedAppShell() {
             element={(
               <Suspense fallback={<RouteFallback />}>
                 <Notifications />
+              </Suspense>
+            )}
+          />
+          <Route
+            path="audit-log"
+            element={(
+              <Suspense fallback={<RouteFallback />}>
+                <AuditLog />
               </Suspense>
             )}
           />

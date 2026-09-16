@@ -27,8 +27,9 @@ import type {
   UpdateManualRefreshSettingRequest,
   UpsertNotificationChannelRequest,
   UpsertNotificationRuleRequest,
+  AuditEventsResponse,
 } from '../types';
-import { apiUrl } from './basePath';
+import { apiUrl, getBasePath } from './basePath';
 import { sessionFetch } from './sessionFetch';
 
 const inFlightGetRequests = new Map<string, Promise<unknown>>();
@@ -498,4 +499,45 @@ export async function bulkDeleteNotifications(ids: BulkDeleteRequest['ids']): Pr
 
 export async function deleteReadNotifications(): Promise<void> {
     await sendJson('/api/notifications/delete-read', { method: 'POST' }, 'Failed to delete read notifications');
+}
+
+export async function fetchAuditEvents(params?: {
+    offset?: number;
+    limit?: number;
+    action?: string;
+    outcome?: string;
+    user?: string;
+    since?: string;
+    until?: string;
+}): Promise<AuditEventsResponse> {
+    const searchParams = new URLSearchParams();
+    if (params?.offset !== undefined) searchParams.set('offset', String(params.offset));
+    if (params?.limit !== undefined) searchParams.set('limit', String(params.limit));
+    if (params?.action) searchParams.set('action', params.action);
+    if (params?.outcome) searchParams.set('outcome', params.outcome);
+    if (params?.user) searchParams.set('user', params.user);
+    if (params?.since) searchParams.set('since', params.since);
+    if (params?.until) searchParams.set('until', params.until);
+    return fetchJson<AuditEventsResponse>(`/api/audit-events?${searchParams.toString()}`, undefined, 'Failed to fetch audit events');
+}
+
+export function getAuditEventsExportUrl(params?: {
+    format?: 'csv' | 'json';
+    max_events?: number;
+    action?: string;
+    outcome?: string;
+    user?: string;
+    since?: string;
+    until?: string;
+}): string {
+    const basePath = getBasePath() || '';
+    const searchParams = new URLSearchParams();
+    searchParams.set('format', params?.format || 'csv');
+    if (params?.max_events) searchParams.set('max_events', String(params.max_events));
+    if (params?.action) searchParams.set('action', params.action);
+    if (params?.outcome) searchParams.set('outcome', params.outcome);
+    if (params?.user) searchParams.set('user', params.user);
+    if (params?.since) searchParams.set('since', params.since);
+    if (params?.until) searchParams.set('until', params.until);
+    return `${basePath}/api/audit-events?${searchParams.toString()}`;
 }
