@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FileJson, FileSpreadsheet, Search, X } from 'lucide-react';
 import { fetchAuditEvents, getAuditEventsExportUrl } from '../lib/api';
 import { useI18n } from '../lib/i18n';
@@ -67,9 +67,19 @@ export function AuditLog() {
     }
   }, [filterAction, filterOutcome, filterUser, filterSince, filterUntil]);
 
+  const loadRef = useRef(load);
+  // eslint-disable-next-line react-hooks/refs
+  loadRef.current = load;
+
   useEffect(() => {
-    load(0);
-  }, [load]);
+    loadRef.current(0);
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOffset(0);
+    loadRef.current(0);
+  }, [filterAction, filterOutcome, filterUser, filterSince, filterUntil]);
 
   const hasFilters = filterAction || filterOutcome || filterUser || filterSince || filterUntil;
 
