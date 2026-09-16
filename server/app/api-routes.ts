@@ -1289,13 +1289,29 @@ app.get(`${config.basePath}/api/audit-events`, ensureAuth, async (context) => {
   if (!session) return context.json({ error: 'Not authenticated' }, 401);
   if (session.role !== 'admin') return context.json({ error: 'Admin required', code: 'FORBIDDEN' }, 403);
 
-  const { offset: offsetStr, limit: limitStr, action, outcome, user, since, until } = context.req.query() as Record<string, string>;
-  const offset = Math.max(0, parseInt(offsetStr || '0', 10));
-  const limit = Math.min(1000, Math.max(1, parseInt(limitStr || '50', 10)));
+  const {
+    offset: offsetStr, limit: limitStr, format,
+    action, outcome, user, since, until,
+    max_events: maxEventsStr,
+  } = context.req.query() as Record<string, string>;
 
-  const total = database.countAuditEvents();
+  const filters = {
+    action: action || null,
+    outcome: outcome || null,
+    user: user || null,
+    since: since || null,
+    until: until || null,
+  };
 
-  const rows = database.listAuditEventsPage(offset, limit);
+  const isExport = format === 'csv' || format === 'json';
+  const exportLimit = isExport
+    ? Math.min(10000, Math.max(1, parseInt(maxEventsStr || '1000', 10)))
+    : undefined;
+  const offset = isExport ? 0 : Math.max(0, parseInt(offsetStr || '0', 10));
+  const limit = isExport ? exportLimit! : Math.min(1000, Math.max(1, parseInt(limitStr || '50', 10)));
+
+  const total = database.countAuditEvents(filters);
+  const rows = database.listAuditEventsPage(offset, limit, filters);
   const events = rows.map((row) => ({
     id: row.id,
     time: row.time,
@@ -1306,6 +1322,23 @@ app.get(`${config.basePath}/api/audit-events`, ensureAuth, async (context) => {
     details: row.detailsJson ? JSON.parse(row.detailsJson) : {},
     targets: row.targetsJson ? JSON.parse(row.targetsJson) : null,
   }));
+
+  if (format === 'csv') {
+    const csvHeader = 'id,time,user,role,action,outcome';
+    const csvRows = events.map((e) =>
+      [e.id, e.time, `"${e.user}"`, e.role ? `"${e.role}"` : '', `"${e.action}"`, `"${e.outcome}"`].join(','),
+    );
+    const csv = [csvHeader, ...csvRows].join('\n');
+    context.header('Content-Type', 'text/csv');
+    context.header('Content-Disposition', `attachment; filename="audit-events-${new Date().toISOString().slice(0, 10)}.csv"`);
+    return context.body(csv);
+  }
+
+  if (format === 'json') {
+    context.header('Content-Type', 'application/json');
+    context.header('Content-Disposition', `attachment; filename="audit-events-${new Date().toISOString().slice(0, 10)}.json"`);
+    return context.body(JSON.stringify({ events, total }, null, 2));
+  }
 
   return context.json({ events, total, offset, limit });
 });

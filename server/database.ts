@@ -806,10 +806,22 @@ export class CrowdsecDatabase {
     this.listAuditEventsStatement = this.db.query(`
       SELECT id, time, user, role, action, outcome, details_json, targets_json
       FROM audit_events
+      WHERE ($user IS NULL OR user = $user)
+        AND ($action IS NULL OR action = $action)
+        AND ($outcome IS NULL OR outcome = $outcome)
+        AND ($since IS NULL OR time >= $since)
+        AND ($until IS NULL OR time <= $until)
       ORDER BY time DESC
       LIMIT $limit OFFSET $offset
     `);
-    this.countAuditEventsStatement = this.db.query('SELECT COUNT(*) as count FROM audit_events');
+    this.countAuditEventsStatement = this.db.query(`
+      SELECT COUNT(*) as count FROM audit_events
+      WHERE ($user IS NULL OR user = $user)
+        AND ($action IS NULL OR action = $action)
+        AND ($outcome IS NULL OR outcome = $outcome)
+        AND ($since IS NULL OR time >= $since)
+        AND ($until IS NULL OR time <= $until)
+    `);
     this.getCveCacheEntryStatement = this.db.query(`
       SELECT id, published_at, fetched_at
       FROM cve_cache
@@ -2306,11 +2318,33 @@ export class CrowdsecDatabase {
     return (this.countUnreadNotificationsStatement.get() as CountRow).count;
   }
 
-  countAuditEvents(): number {
-    return (this.countAuditEventsStatement.get() as CountRow).count;
+  countAuditEvents(filters?: {
+    user?: string | null;
+    action?: string | null;
+    outcome?: string | null;
+    since?: string | null;
+    until?: string | null;
+  }): number {
+    return (this.countAuditEventsStatement.get({
+      $user: filters?.user ?? null,
+      $action: filters?.action ?? null,
+      $outcome: filters?.outcome ?? null,
+      $since: filters?.since ?? null,
+      $until: filters?.until ?? null,
+    }) as CountRow).count;
   }
 
-  listAuditEventsPage(offset: number, limit: number): Array<{
+  listAuditEventsPage(
+    offset: number,
+    limit: number,
+    filters?: {
+      user?: string | null;
+      action?: string | null;
+      outcome?: string | null;
+      since?: string | null;
+      until?: string | null;
+    },
+  ): Array<{
     id: number;
     time: string;
     user: string;
@@ -2320,7 +2354,15 @@ export class CrowdsecDatabase {
     detailsJson: string | null;
     targetsJson: string | null;
   }> {
-    const rows = this.listAuditEventsStatement.all({ $offset: offset, $limit: limit }) as Array<Record<string, unknown>>;
+    const rows = this.listAuditEventsStatement.all({
+      $offset: offset,
+      $limit: limit,
+      $user: filters?.user ?? null,
+      $action: filters?.action ?? null,
+      $outcome: filters?.outcome ?? null,
+      $since: filters?.since ?? null,
+      $until: filters?.until ?? null,
+    }) as Array<Record<string, unknown>>;
     return rows.map((row) => ({
       id: row.id as number,
       time: row.time as string,
