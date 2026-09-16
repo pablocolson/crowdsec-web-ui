@@ -761,6 +761,61 @@ function buildInstanceSummary(instance: RuntimeConfig['instances'][number]) {
   };
 }
 
+function computeInstanceHealth(instanceId: string) {
+  const lapiStatus = lapiClients.get(instanceId)?.getStatus();
+  const sync = instanceSyncStatuses.get(instanceId) || syncStatus;
+  const lapiConnected = lapiStatus?.isConnected ?? false;
+  const syncComplete = sync.state === 'complete' && !sync.isSyncing;
+  const lastSyncAt = sync.completedAt || sync.startedAt || null;
+  const lastError = lapiStatus?.lastError || (sync.errors?.length ? sync.errors[0] : null);
+  const alertsCount = database.countAlerts(instanceId);
+  const decisionsCount = database.countDecisions(instanceId);
+
+  let state: 'healthy' | 'degraded' | 'offline' | 'unknown' = 'unknown';
+  if (!lapiConnected) {
+    state = 'offline';
+  } else if (sync.isSyncing || sync.state === 'failed') {
+    state = 'degraded';
+  } else if (sync.state === 'partial' || lastError) {
+    state = 'degraded';
+  } else if (syncComplete) {
+    state = 'healthy';
+  }
+
+  return {
+    state,
+    lapi: lapiStatus ?? { isConnected: false, lastCheck: null, lastError: null, offline_since: null },
+    sync: {
+      isSyncing: sync.isSyncing,
+      state: sync.state,
+      startedAt: sync.startedAt,
+      completedAt: sync.completedAt,
+      errors: sync.errors,
+    },
+    lastSyncAt,
+    lastError,
+    alertsCount,
+    decisionsCount,
+  };
+}
+
+app.get(`${config.basePath}/api/instances/:instanceId/health`, ensureAuth, async (context) => {
+  const instanceId = String(context.req.param('instanceId'));
+  const instance = config.instances.find((c) => c.id === instanceId);
+  if (!instance) return context.json({ error: 'Unknown instance' }, 404);
+
+  const health = computeInstanceHealth(instanceId);
+  return context.json(health);
+});
+
+app.get(`${config.basePath}/api/instances/health`, ensureAuth, async (context) => {
+  const summaries = config.instances.map((instance) => {
+    const health = computeInstanceHealth(instance.id);
+    return { id: instance.id, name: instance.name, icon: instance.icon, ...health };
+  });
+  return context.json({ instances: summaries });
+});
+
 app.get(`${config.basePath}/api/config`, ensureAuth, (context) => {
   const hours = lookbackHours(config.lookbackPeriod);
   const payload: ConfigResponse = {
