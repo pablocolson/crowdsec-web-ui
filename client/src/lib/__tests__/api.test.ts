@@ -18,6 +18,7 @@ import {
   fetchAlertsPaginated,
   fetchAlertsForStats,
   fetchAuditEvents,
+  fetchAlertInvestigation,
   fetchConfig,
   fetchCombinedCrowdsecMetrics,
   fetchCrowdsecMetrics,
@@ -28,13 +29,16 @@ import {
   fetchNotifications,
   fetchNotificationsPaginated,
   fetchNotificationSettings,
+  fetchInstancesHealth,
   getAuditEventsExportUrl,
   markNotificationRead,
   markNotificationsRead,
   testNotificationChannel,
   updateNotificationChannel,
   updateLanguagePreference,
+  updateAlertInvestigation,
   updateNotificationRule,
+  addAlertInvestigationNote,
 } from '../api';
 
 function mockFetch(handler: typeof fetch): void {
@@ -100,6 +104,23 @@ describe('api helpers', () => {
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/api/decisions?page=3&page_size=10&ip=1.2.3.4');
     expect(String(fetchMock.mock.calls[1]?.[0])).not.toContain('target=');
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/api/notifications?page=4&page_size=20');
+  });
+
+  test('investigation and health helpers use the expected endpoints', async () => {
+    const fetchMock = vi.fn(async (_input: Parameters<typeof fetch>[0], _init?: Parameters<typeof fetch>[1]) => Response.json({ investigation: null, notes: [], instances: [] }));
+    mockFetch(fetchMock);
+
+    await fetchInstancesHealth();
+    await fetchAlertInvestigation(7, 'edge');
+    await fetchAlertInvestigation(8);
+    await updateAlertInvestigation(7, { status: 'in_progress', instance_id: 'edge' });
+    await addAlertInvestigationNote(7, { content: 'Investigating', instance_id: 'edge' });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/api/instances/health');
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/api/alerts/7/investigation?instance_id=edge');
+    expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/api/alerts/8/investigation');
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: 'PATCH' });
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({ method: 'POST' });
   });
 
   test('uses instance-aware resource paths and bulk reference payloads', async () => {

@@ -407,18 +407,19 @@ app.patch(`${config.basePath}/api/alerts/:id/investigation`, ensureAuth, async (
   const session = dashboardAuth.getSession(context);
   if (!session) return context.json({ error: 'Not authenticated' }, 401);
 
-  const instanceId = config.instances.length === 1 ? 'default' : null;
-  if (!instanceId) return context.json({ error: 'instance_id is required' }, 400);
-
-  const internalAlertId = database.getAlertInternalId(instanceId, alertId);
-  if (!internalAlertId) return context.json({ error: 'Alert not found in local database. Sync it first.' }, 404);
-
-  let body: { status?: string; assigned_to?: string | null; ticket_ref?: string | null };
+  let body: { status?: string; assigned_to?: string | null; ticket_ref?: string | null; instance_id?: string };
   try {
     body = await context.req.json();
   } catch {
     return context.json({ error: 'Invalid JSON body' }, 400);
   }
+
+  const instanceId = config.instances.length === 1 ? config.instances[0].id : body.instance_id;
+  if (!instanceId) return context.json({ error: 'instance_id is required' }, 400);
+  if (!config.instances.some((instance) => instance.id === instanceId)) return context.json({ error: 'Unknown instance' }, 404);
+
+  const internalAlertId = database.getAlertInternalId(instanceId, alertId);
+  if (!internalAlertId) return context.json({ error: 'Alert not found in local database. Sync it first.' }, 404);
 
   const validStatuses = ['new', 'in_progress', 'resolved'];
   if (body.status !== undefined && !validStatuses.includes(body.status)) {
@@ -458,8 +459,10 @@ app.get(`${config.basePath}/api/alerts/:id/investigation`, ensureAuth, async (co
   const alertId = String(context.req.param('id'));
   if (!/^\d+$/.test(alertId)) return context.json({ error: 'Invalid alert ID' }, 400);
 
-  const instanceId = config.instances.length === 1 ? 'default' : null;
+  const requestedInstanceId = context.req.query('instance_id');
+  const instanceId = config.instances.length === 1 ? config.instances[0].id : requestedInstanceId;
   if (!instanceId) return context.json({ error: 'instance_id is required' }, 400);
+  if (!config.instances.some((instance) => instance.id === instanceId)) return context.json({ error: 'Unknown instance' }, 404);
 
   const internalAlertId = database.getAlertInternalId(instanceId, alertId);
   if (!internalAlertId) return context.json({ error: 'Alert not found in local database. Sync it first.' }, 404);
@@ -479,18 +482,19 @@ app.post(`${config.basePath}/api/alerts/:id/investigation/notes`, ensureAuth, as
   const session = dashboardAuth.getSession(context);
   if (!session) return context.json({ error: 'Not authenticated' }, 401);
 
-  const instanceId = config.instances.length === 1 ? 'default' : null;
-  if (!instanceId) return context.json({ error: 'instance_id is required' }, 400);
-
-  const internalAlertId = database.getAlertInternalId(instanceId, alertId);
-  if (!internalAlertId) return context.json({ error: 'Alert not found in local database. Sync it first.' }, 404);
-
-  let body: { content: string };
+  let body: { content: string; instance_id?: string };
   try {
     body = await context.req.json();
   } catch {
     return context.json({ error: 'Invalid JSON body' }, 400);
   }
+
+  const instanceId = config.instances.length === 1 ? config.instances[0].id : body.instance_id;
+  if (!instanceId) return context.json({ error: 'instance_id is required' }, 400);
+  if (!config.instances.some((instance) => instance.id === instanceId)) return context.json({ error: 'Unknown instance' }, 404);
+
+  const internalAlertId = database.getAlertInternalId(instanceId, alertId);
+  if (!internalAlertId) return context.json({ error: 'Alert not found in local database. Sync it first.' }, 404);
 
   if (!body.content || typeof body.content !== 'string' || body.content.trim().length === 0) {
     return context.json({ error: 'content is required and must be non-empty' }, 400);

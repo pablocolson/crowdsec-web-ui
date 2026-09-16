@@ -6,17 +6,24 @@ import { CopyableText } from './ui/CopyableText';
 import { InstanceIcon } from './InstanceIcon';
 import { useI18n } from '../lib/i18n';
 import { useDateTime } from '../lib/dateTime';
-import type { InstanceSummary } from '../types';
+import type { InstanceHealth, InstanceSummary } from '../types';
 
 interface SecurityEngineCardProps {
     instance: InstanceSummary;
     colorIndex: number;
+    health?: InstanceHealth;
 }
 
-export function SecurityEngineCard({ instance, colorIndex }: SecurityEngineCardProps) {
+export function SecurityEngineCard({ instance, colorIndex, health }: SecurityEngineCardProps) {
     const { t } = useI18n();
     const { formatDateTime } = useDateTime();
     const isOnline = instance.lapi_status.isConnected;
+    const healthState = health?.state;
+    const healthClassName = healthState === 'healthy'
+        ? 'text-green-700 dark:text-green-400'
+        : healthState === 'offline'
+            ? 'text-red-700 dark:text-red-400'
+            : 'text-amber-700 dark:text-amber-400';
 
     return (
         <Card className={`h-full transition-shadow hover:shadow-lg ${instance.archived ? 'opacity-60' : ''}`}>
@@ -52,6 +59,12 @@ export function SecurityEngineCard({ instance, colorIndex }: SecurityEngineCardP
                         {isOnline ? t('common.online') : t('common.offline')}
                     </span>
                 </div>
+
+                {healthState && (
+                    <div className={`text-sm font-medium ${healthClassName}`}>
+                        {t(`components.securityEngineCard.health.${healthState}`)}
+                    </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3 border-t border-gray-100 pt-3 text-center dark:border-gray-700/70">
                     <div>
@@ -90,6 +103,7 @@ export function SecurityEngineCard({ instance, colorIndex }: SecurityEngineCardP
                             : t('components.securityEngineCard.never')}
                     </span>
                 </div>
+                {health?.lastError && <p className="truncate text-xs text-red-600 dark:text-red-400" title={health.lastError}>{health.lastError}</p>}
             </CardContent>
         </Card>
     );
