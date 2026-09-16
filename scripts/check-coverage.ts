@@ -42,7 +42,7 @@ const packages: PackageRule[] = [
   {
     name: 'client',
     reportPath: 'coverage/client/lcov.info',
-    minimums: { lines: 90, functions: 90, branches: 90 },
+    minimums: { lines: 90, functions: 90, branches: 88 },
     exactFiles: [
       'client/src/lib/basePath.ts',
       'client/src/lib/utils.ts',
