@@ -236,6 +236,59 @@ describe('CrowdsecDatabase notifications and runtime', () => {
     db.close();
   });
 
+  test('upserts and retrieves alert investigations and notes', () => {
+    const db = createTestDatabase();
+    const now = '2025-06-01T12:00:00.000Z';
+
+    db.upsertAlertInvestigation({
+      alertInternalId: 1,
+      status: 'new',
+      assignedTo: null,
+      ticketRef: null,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: 'tommy',
+      updatedBy: 'tommy',
+    });
+
+    db.upsertAlertInvestigation({
+      alertInternalId: 1,
+      status: 'in_progress',
+      assignedTo: 'alice',
+      ticketRef: 'TICKET-42',
+      createdAt: now,
+      updatedAt: now,
+      createdBy: 'tommy',
+      updatedBy: 'alice',
+    });
+
+    const inv = db.getAlertInvestigation(1);
+    expect(inv).not.toBeNull();
+    expect(inv!.status).toBe('in_progress');
+    expect(inv!.assignedTo).toBe('alice');
+    expect(inv!.ticketRef).toBe('TICKET-42');
+    expect(inv!.createdBy).toBe('tommy');
+    expect(inv!.updatedBy).toBe('alice');
+
+    const list = db.listAlertInvestigations('in_progress');
+    expect(list).toHaveLength(1);
+    expect(list[0].alertInternalId).toBe(1);
+
+    db.insertAlertInvestigationNote({
+      alertInternalId: 1,
+      content: 'Checking firewall logs.',
+      author: 'alice',
+      createdAt: now,
+    });
+
+    const notes = db.listAlertInvestigationNotes(1);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].content).toBe('Checking firewall logs.');
+    expect(notes[0].author).toBe('alice');
+
+    db.close();
+  });
+
   test('checkpoints WAL data on close so settings survive container recreation', () => {
     const dbPath = createTestDatabasePath();
     const db = new CrowdsecDatabase({ dbPath });

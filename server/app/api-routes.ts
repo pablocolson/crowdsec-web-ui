@@ -397,6 +397,136 @@ app.get(`${config.basePath}/api/alerts/:id`, ensureAuth, ensurePublishedRevision
   }
 });
 
+app.patch(`${config.basePath}/api/alerts/:id/investigation`, ensureAuth, async (context) => {
+  const readOnlyResponse = ensureCanManageSettings(context);
+  if (readOnlyResponse) return readOnlyResponse;
+
+  const alertId = String(context.req.param('id'));
+  if (!/^\d+$/.test(alertId)) return context.json({ error: 'Invalid alert ID' }, 400);
+
+  const session = dashboardAuth.getSession(context);
+  if (!session) return context.json({ error: 'Not authenticated' }, 401);
+
+  const instanceId = config.instances.length === 1 ? 'default' : null;
+  if (!instanceId) return context.json({ error: 'instance_id is required' }, 400);
+
+  const internalAlertId = database.getAlertInternalId(instanceId, alertId);
+  if (!internalAlertId) return context.json({ error: 'Alert not found in local database. Sync it first.' }, 404);
+
+  let body: { status?: string; assigned_to?: string | null; ticket_ref?: string | null };
+  try {
+    body = await context.req.json();
+  } catch {
+    return context.json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  const validStatuses = ['new', 'in_progress', 'resolved'];
+  if (body.status !== undefined && !validStatuses.includes(body.status)) {
+    return context.json({ error: `status must be one of: ${validStatuses.join(', ')}` }, 400);
+  }
+
+  const existing = database.getAlertInvestigation(internalAlertId);
+  const now = new Date().toISOString();
+  const username = session.username;
+
+  database.upsertAlertInvestigation({
+    alertInternalId: internalAlertId,
+    status: body.status ?? existing?.status ?? 'new',
+    assignedTo: body.assigned_to !== undefined ? body.assigned_to : existing?.assignedTo ?? null,
+    ticketRef: body.ticket_ref !== undefined ? body.ticket_ref : existing?.ticketRef ?? null,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    createdBy: existing?.createdBy ?? username,
+    updatedBy: username,
+  });
+
+  auditLog.record(context, {
+    action: 'investigation.update',
+    alert_id: alertId,
+    status: body.status ?? 'unchanged',
+    assigned_to: body.assigned_to,
+    ticket_ref: body.ticket_ref,
+    outcome: 'success',
+  });
+
+  const updated = database.getAlertInvestigation(internalAlertId)!;
+  const notes = database.listAlertInvestigationNotes(internalAlertId);
+  return context.json({ investigation: updated, notes });
+});
+
+app.get(`${config.basePath}/api/alerts/:id/investigation`, ensureAuth, async (context) => {
+  const alertId = String(context.req.param('id'));
+  if (!/^\d+$/.test(alertId)) return context.json({ error: 'Invalid alert ID' }, 400);
+
+  const instanceId = config.instances.length === 1 ? 'default' : null;
+  if (!instanceId) return context.json({ error: 'instance_id is required' }, 400);
+
+  const internalAlertId = database.getAlertInternalId(instanceId, alertId);
+  if (!internalAlertId) return context.json({ error: 'Alert not found in local database. Sync it first.' }, 404);
+
+  const investigation = database.getAlertInvestigation(internalAlertId);
+  const notes = database.listAlertInvestigationNotes(internalAlertId);
+  return context.json({ investigation, notes });
+});
+
+app.post(`${config.basePath}/api/alerts/:id/investigation/notes`, ensureAuth, async (context) => {
+  const readOnlyResponse = ensureCanManageSettings(context);
+  if (readOnlyResponse) return readOnlyResponse;
+
+  const alertId = String(context.req.param('id'));
+  if (!/^\d+$/.test(alertId)) return context.json({ error: 'Invalid alert ID' }, 400);
+
+  const session = dashboardAuth.getSession(context);
+  if (!session) return context.json({ error: 'Not authenticated' }, 401);
+
+  const instanceId = config.instances.length === 1 ? 'default' : null;
+  if (!instanceId) return context.json({ error: 'instance_id is required' }, 400);
+
+  const internalAlertId = database.getAlertInternalId(instanceId, alertId);
+  if (!internalAlertId) return context.json({ error: 'Alert not found in local database. Sync it first.' }, 404);
+
+  let body: { content: string };
+  try {
+    body = await context.req.json();
+  } catch {
+    return context.json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  if (!body.content || typeof body.content !== 'string' || body.content.trim().length === 0) {
+    return context.json({ error: 'content is required and must be non-empty' }, 400);
+  }
+
+  const now = new Date().toISOString();
+  database.insertAlertInvestigationNote({
+    alertInternalId: internalAlertId,
+    content: body.content.trim(),
+    author: session.username,
+    createdAt: now,
+  });
+
+  auditLog.record(context, {
+    action: 'investigation.note_added',
+    alert_id: alertId,
+    note_length: body.content.trim().length,
+    outcome: 'success',
+  });
+
+  const notes = database.listAlertInvestigationNotes(internalAlertId);
+  return context.json({ notes }, 201);
+});
+
+app.get(`${config.basePath}/api/investigations`, ensureAuth, async (context) => {
+  const session = dashboardAuth.getSession(context);
+  if (!session) return context.json({ error: 'Not authenticated' }, 401);
+
+  const { status } = context.req.query() as { status?: string };
+  const validStatuses = ['new', 'in_progress', 'resolved'];
+  const filterStatus = status && validStatuses.includes(status) ? status : 'new';
+
+  const investigations = database.listAlertInvestigations(filterStatus);
+  return context.json({ investigations, status: filterStatus });
+});
+
 app.delete(`${config.basePath}/api/alerts/:id`, ensureAuth, async (context) => {
   if (config.instances.length > 1) return context.json({ error: 'instance_id is required when multiple CrowdSec instances are configured' }, 400);
   const readOnlyResponse = ensureCanManageEnforcement(context);
