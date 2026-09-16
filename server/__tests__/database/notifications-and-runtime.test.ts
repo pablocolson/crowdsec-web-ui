@@ -195,6 +195,114 @@ describe('CrowdsecDatabase notifications and runtime', () => {
     db.close();
   });
 
+  test('inserts and lists audit events with details and targets', () => {
+    const db = createTestDatabase();
+
+    db.insertAuditEvent({
+      time: '2025-06-01T12:00:00.000Z',
+      user: 'tommy',
+      role: 'admin',
+      action: 'decision.delete',
+      outcome: 'success',
+      detailsJson: JSON.stringify({ ip: '1.2.3.4', reason: 'manual' }),
+      targetsJson: JSON.stringify({ decision_ids: ['10', '11'] }),
+    });
+    db.insertAuditEvent({
+      time: '2025-06-01T12:01:00.000Z',
+      user: 'alice',
+      role: 'operator',
+      action: 'alert.delete',
+      outcome: 'partial',
+      detailsJson: JSON.stringify({ alert_ids: ['5'] }),
+      targetsJson: null,
+    });
+
+    expect(db.countAuditEvents()).toBe(2);
+
+    const page = db.listAuditEventsPage(0, 10);
+    expect(page).toHaveLength(2);
+    expect(page[0].user).toBe('alice');
+    expect(page[0].action).toBe('alert.delete');
+    expect(JSON.parse(page[0].detailsJson!)).toEqual({ alert_ids: ['5'] });
+    expect(page[0].targetsJson).toBeNull();
+    expect(page[1].user).toBe('tommy');
+    expect(page[1].action).toBe('decision.delete');
+    expect(JSON.parse(page[1].targetsJson!)).toEqual({ decision_ids: ['10', '11'] });
+
+    const pageOffset = db.listAuditEventsPage(1, 1);
+    expect(pageOffset).toHaveLength(1);
+    expect(pageOffset[0].user).toBe('tommy');
+
+    expect(db.countAuditEvents({ user: 'alice' })).toBe(1);
+    expect(db.countAuditEvents({ action: 'decision.delete' })).toBe(1);
+    expect(db.countAuditEvents({ outcome: 'success' })).toBe(1);
+    expect(db.countAuditEvents({ since: '2025-06-01T12:00:30.000Z' })).toBe(1);
+
+    expect(db.countAuditEvents({ until: '2025-06-01T12:00:30.000Z' })).toBe(1);
+
+    const filteredPage = db.listAuditEventsPage(0, 10, { user: 'alice' });
+    expect(filteredPage).toHaveLength(1);
+    expect(filteredPage[0].user).toBe('alice');
+
+    expect(db.purgeAuditEvents('2025-06-01T12:00:30.000Z')).toBe(1);
+    expect(db.countAuditEvents()).toBe(1);
+
+    db.close();
+  });
+
+  test('upserts and retrieves alert investigations and notes', () => {
+    const db = createTestDatabase();
+    const now = '2025-06-01T12:00:00.000Z';
+
+    db.upsertAlertInvestigation({
+      alertInternalId: 1,
+      status: 'new',
+      assignedTo: null,
+      ticketRef: null,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: 'tommy',
+      updatedBy: 'tommy',
+    });
+
+    db.upsertAlertInvestigation({
+      alertInternalId: 1,
+      status: 'in_progress',
+      assignedTo: 'alice',
+      ticketRef: 'TICKET-42',
+      createdAt: now,
+      updatedAt: now,
+      createdBy: 'tommy',
+      updatedBy: 'alice',
+    });
+
+    const inv = db.getAlertInvestigation(1);
+    expect(inv).not.toBeNull();
+    expect(inv!.status).toBe('in_progress');
+    expect(inv!.assignedTo).toBe('alice');
+    expect(inv!.ticketRef).toBe('TICKET-42');
+    expect(inv!.createdBy).toBe('tommy');
+    expect(inv!.updatedBy).toBe('alice');
+
+    const list = db.listAlertInvestigations('in_progress');
+    expect(list).toHaveLength(1);
+    expect(list[0].alertInternalId).toBe(1);
+
+    db.insertAlertInvestigationNote({
+      alertInternalId: 1,
+      content: 'Checking firewall logs.',
+      author: 'alice',
+      createdAt: now,
+    });
+
+    const notes = db.listAlertInvestigationNotes(1);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].content).toBe('Checking firewall logs.');
+    expect(notes[0].author).toBe('alice');
+
+    db.close();
+  });
+
   test('checkpoints WAL data on close so settings survive container recreation', () => {
     const dbPath = createTestDatabasePath();
     const db = new CrowdsecDatabase({ dbPath });

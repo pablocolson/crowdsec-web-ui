@@ -74,6 +74,14 @@ export type {
   UpdateMetricsSidebarPreferenceRequest,
   UpdateManualRefreshSettingRequest,
   UpdateCheckResponse,
+  AuditEvent,
+  AuditEventsResponse,
+  InstanceHealth,
+  InstanceHealthSummary,
+  InstancesHealthResponse,
+  InvestigationInvestigation,
+  InvestigationNote,
+  InvestigationResponse,
 } from '../../../shared/contracts';
 
 export interface DateRangeSelection {

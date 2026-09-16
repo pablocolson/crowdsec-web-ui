@@ -17,6 +17,8 @@ import {
   fetchAlerts,
   fetchAlertsPaginated,
   fetchAlertsForStats,
+  fetchAuditEvents,
+  fetchAlertInvestigation,
   fetchConfig,
   fetchCombinedCrowdsecMetrics,
   fetchCrowdsecMetrics,
@@ -27,12 +29,16 @@ import {
   fetchNotifications,
   fetchNotificationsPaginated,
   fetchNotificationSettings,
+  fetchInstancesHealth,
+  getAuditEventsExportUrl,
   markNotificationRead,
   markNotificationsRead,
   testNotificationChannel,
   updateNotificationChannel,
   updateLanguagePreference,
+  updateAlertInvestigation,
   updateNotificationRule,
+  addAlertInvestigationNote,
 } from '../api';
 
 function mockFetch(handler: typeof fetch): void {
@@ -60,6 +66,9 @@ describe('api helpers', () => {
         if (String(input).includes('/api/alerts/1?')) {
           return Response.json([{ id: 1 }]);
         }
+        if (String(input).includes('/api/audit-events')) {
+          return Response.json({ events: [{ id: 1, time: '2025-06-01T12:00:00Z', user: 'tommy', role: 'admin', action: 'decision.delete', outcome: 'success', details: {}, targets: null }], total: 1, offset: 0, limit: 50 });
+        }
         return Response.json([{ id: 1 }]);
       }),
     );
@@ -74,6 +83,7 @@ describe('api helpers', () => {
     await expect(fetchNotificationSettings()).resolves.toEqual([{ id: 1 }]);
     await expect(fetchNotifications()).resolves.toEqual({ data: [{ id: 1 }], pagination: { page: 1, page_size: 50, total: 1, total_pages: 1, unfiltered_total: 1 }, selectable_ids: ['1'], unread_count: 1 });
     await expect(fetchNotificationsPaginated()).resolves.toEqual({ data: [{ id: 1 }], pagination: { page: 1, page_size: 50, total: 1, total_pages: 1, unfiltered_total: 1 }, selectable_ids: ['1'], unread_count: 1 });
+    await expect(fetchAuditEvents()).resolves.toEqual({ events: [{ id: 1, time: '2025-06-01T12:00:00Z', user: 'tommy', role: 'admin', action: 'decision.delete', outcome: 'success', details: {}, targets: null }], total: 1, offset: 0, limit: 50 });
     expect(String(vi.mocked(fetch).mock.calls.find(([input]) => String(input).includes('/api/alerts/1'))?.[0])).toContain('include_decisions=false');
   });
 
@@ -94,6 +104,23 @@ describe('api helpers', () => {
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/api/decisions?page=3&page_size=10&ip=1.2.3.4');
     expect(String(fetchMock.mock.calls[1]?.[0])).not.toContain('target=');
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/api/notifications?page=4&page_size=20');
+  });
+
+  test('investigation and health helpers use the expected endpoints', async () => {
+    const fetchMock = vi.fn(async (_input: Parameters<typeof fetch>[0], _init?: Parameters<typeof fetch>[1]) => Response.json({ investigation: null, notes: [], instances: [] }));
+    mockFetch(fetchMock);
+
+    await fetchInstancesHealth();
+    await fetchAlertInvestigation(7, 'edge');
+    await fetchAlertInvestigation(8);
+    await updateAlertInvestigation(7, { status: 'in_progress', instance_id: 'edge' });
+    await addAlertInvestigationNote(7, { content: 'Investigating', instance_id: 'edge' });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/api/instances/health');
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/api/alerts/7/investigation?instance_id=edge');
+    expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/api/alerts/8/investigation');
+    expect(fetchMock.mock.calls[3]?.[1]).toMatchObject({ method: 'PATCH' });
+    expect(fetchMock.mock.calls[4]?.[1]).toMatchObject({ method: 'POST' });
   });
 
   test('uses instance-aware resource paths and bulk reference payloads', async () => {
@@ -379,5 +406,31 @@ describe('api helpers', () => {
     await expect(deleteNotificationRule('invalid-json')).rejects.toThrow('Failed to delete notification rule');
     await expect(markNotificationRead('no-message')).rejects.toThrow('Failed to mark notification as read');
     await expect(deleteNotification('delete-fails')).rejects.toThrow('Failed to delete notification');
+  });
+
+  test('getAuditEventsExportUrl returns correct URL with params', async () => {
+    const url = getAuditEventsExportUrl({ format: 'csv', max_events: 500, action: 'decision.delete', user: 'alice' });
+    expect(url).toContain('/api/audit-events');
+    expect(url).toContain('format=csv');
+    expect(url).toContain('max_events=500');
+    expect(url).toContain('action=decision.delete');
+    expect(url).toContain('user=alice');
+  });
+
+  test('getAuditEventsExportUrl defaults format and skips empty optional params', () => {
+    const url = getAuditEventsExportUrl({});
+    expect(url).toContain('/api/audit-events');
+    expect(url).toContain('format=csv');
+    expect(url).not.toContain('max_events');
+    expect(url).not.toContain('action');
+    expect(url).not.toContain('user');
+  });
+
+  test('getAuditEventsExportUrl includes only provided optional params', () => {
+    const url = getAuditEventsExportUrl({ outcome: 'failure' });
+    expect(url).toContain('format=csv');
+    expect(url).toContain('outcome=failure');
+    expect(url).not.toContain('action');
+    expect(url).not.toContain('user');
   });
 });

@@ -17,6 +17,7 @@ import { TimeDisplay } from "../components/TimeDisplay";
 import { TargetDisplay } from "../components/TargetDisplay";
 import { EventCard } from "../components/EventCard";
 import { ContextSummary } from "../components/ContextSummary";
+import { AlertInvestigationPanel } from "../components/AlertInvestigationPanel";
 import { Collapsible } from "../components/ui/Collapsible";
 import { getDisplayMetadata, isAppSecEvent } from "../lib/alertMetadata";
 import { getCountryCodesMatchingName, getCountryName } from "../lib/utils";
@@ -260,6 +261,7 @@ export function Alerts() {
     const [lookbackHours, setLookbackHours] = useState(168);
     const [simulationsEnabled, setSimulationsEnabled] = useState(false);
     const [canManageEnforcement, setCanManageEnforcement] = useState(false);
+    const [canManageSettings, setCanManageSettings] = useState(true);
     const [multipleInstances, setMultipleInstances] = useState(false);
     const [instanceNames, setInstanceNames] = useState<Record<string, string>>({});
     const [tableColumnPreferences, setTableColumnPreferences] = useState<TableColumnPreferences>(() => loadStoredTableColumnPreferences());
@@ -331,6 +333,7 @@ export function Alerts() {
         lookbackHours: number;
         simulationsEnabled: boolean;
         canManageEnforcement: boolean;
+        canManageSettings: boolean;
         multipleInstances: boolean;
         instanceNames: Record<string, string>;
     } | null>(null);
@@ -709,6 +712,7 @@ export function Alerts() {
             lookbackHours: configData.lookback_hours,
             simulationsEnabled: configData.simulations_enabled === true,
             canManageEnforcement: configData.permissions?.can_manage_enforcement !== false,
+            canManageSettings: configData.permissions?.can_manage_settings !== false,
             multipleInstances: (configData.instances?.length || 0) > 1,
             instanceNames: Object.fromEntries(
                 (configData.instances || []).map((instance) => [instance.id, instance.name]),
@@ -719,6 +723,7 @@ export function Alerts() {
         setLookbackHours(nextConfig.lookbackHours);
         setSimulationsEnabled(nextConfig.simulationsEnabled);
         setCanManageEnforcement(nextConfig.canManageEnforcement);
+        setCanManageSettings(nextConfig.canManageSettings);
         setMultipleInstances(nextConfig.multipleInstances);
         setInstanceNames(nextConfig.instanceNames);
 
@@ -1965,6 +1970,12 @@ export function Alerts() {
                                 />
                             </div>
                         </div>
+
+                        <AlertInvestigationPanel
+                            alertId={selectedAlert.id}
+                            instanceId={selectedAlert.instance_id}
+                            disabled={!canManageSettings}
+                        />
 
                         {/* Message */}
                         {(selectedAlert.message || selectedAlertIsAppSec) && (

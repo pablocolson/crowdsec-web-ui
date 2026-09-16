@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, Search, Table as TableIcon } from 'lucide-react';
-import { fetchConfig } from '../lib/api';
+import { fetchConfig, fetchInstancesHealth } from '../lib/api';
 import { useRefresh } from '../contexts/useRefresh';
 import { useI18n } from '../lib/i18n';
 import { useDateTime } from '../lib/dateTime';
@@ -8,7 +8,7 @@ import { Switch } from '../components/ui/Switch';
 import { SecurityEngineCard } from '../components/SecurityEngineCard';
 import { InstanceIcon } from '../components/InstanceIcon';
 import { Link } from 'react-router-dom';
-import type { InstanceSummary } from '../types';
+import type { InstanceHealth, InstanceSummary } from '../types';
 
 type ViewMode = 'cards' | 'table';
 
@@ -40,11 +40,18 @@ function isInactive(instance: InstanceSummary): boolean {
     return Date.now() - timestamp > INACTIVITY_THRESHOLD_MS;
 }
 
+function healthStateClassName(state: InstanceHealth['state'] | undefined): string {
+    if (state === 'healthy') return 'text-green-700 dark:text-green-400';
+    if (state === 'offline') return 'text-red-700 dark:text-red-400';
+    return 'text-amber-700 dark:text-amber-400';
+}
+
 export function SecurityEngines() {
     const { t } = useI18n();
     const { formatDateTime } = useDateTime();
     const { refreshSignal } = useRefresh();
     const [instances, setInstances] = useState<InstanceSummary[]>([]);
+    const [healthByInstance, setHealthByInstance] = useState<Record<string, InstanceHealth>>({});
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [showArchived, setShowArchived] = useState(false);
@@ -52,8 +59,12 @@ export function SecurityEngines() {
 
     const loadInstances = useCallback(async () => {
         try {
-            const config = await fetchConfig();
+            const [config, health] = await Promise.all([
+                fetchConfig(),
+                fetchInstancesHealth().catch(() => null),
+            ]);
             setInstances(config.instances || []);
+            setHealthByInstance(Object.fromEntries((health?.instances ?? []).map((instance) => [instance.id, instance])));
         } catch (error) {
             console.error('Failed to load security engines', error);
         } finally {
@@ -145,7 +156,7 @@ export function SecurityEngines() {
             ) : viewMode === 'cards' ? (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {visibleInstances.map((instance, index) => (
-                        <SecurityEngineCard key={instance.id} instance={instance} colorIndex={index} />
+                        <SecurityEngineCard key={instance.id} instance={instance} colorIndex={index} health={healthByInstance[instance.id]} />
                     ))}
                 </div>
             ) : (
@@ -162,8 +173,10 @@ export function SecurityEngines() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 bg-white dark:divide-gray-700/70 dark:bg-gray-900/40">
-                            {visibleInstances.map((instance, index) => (
-                                <tr key={instance.id} className={instance.archived ? 'opacity-60' : undefined}>
+                            {visibleInstances.map((instance, index) => {
+                                const health = healthByInstance[instance.id];
+                                const state = health?.state;
+                                return <tr key={instance.id} className={instance.archived ? 'opacity-60' : undefined}>
                                     <td className="px-4 py-3 text-sm">
                                         <Link
                                             to={`/security-engines/${encodeURIComponent(instance.id)}`}
@@ -174,8 +187,8 @@ export function SecurityEngines() {
                                         </Link>
                                     </td>
                                     <td className="px-4 py-3 text-sm">
-                                        <span className={instance.lapi_status.isConnected ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
-                                            {instance.lapi_status.isConnected ? t('common.online') : t('common.offline')}
+                                        <span className={state ? healthStateClassName(state) : instance.lapi_status.isConnected ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}>
+                                            {state ? t(`components.securityEngineCard.health.${state}`) : instance.lapi_status.isConnected ? t('common.online') : t('common.offline')}
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 text-right font-mono text-sm text-gray-900 dark:text-gray-100">{(instance.alerts_count ?? 0).toLocaleString()}</td>
@@ -193,8 +206,8 @@ export function SecurityEngines() {
                                             </span>
                                         )}
                                     </td>
-                                </tr>
-                            ))}
+                                </tr>;
+                            })}
                         </tbody>
                     </table>
                 </div>

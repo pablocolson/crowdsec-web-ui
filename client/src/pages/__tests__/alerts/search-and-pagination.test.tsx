@@ -1,5 +1,5 @@
 import { createDeferred, flushAlertSearchDebounce, installControlledIntersectionObserver, setRefreshSignalMock, toPaginatedAlerts } from './harness';
-import { describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
@@ -30,6 +30,10 @@ async function expandAlertSearch() {
 }
 
 describe('Alerts page search and pagination', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
   test('supports advanced field search and shows the active search badge', async () => {
     render(
       <MemoryRouter initialEntries={['/alerts']}>

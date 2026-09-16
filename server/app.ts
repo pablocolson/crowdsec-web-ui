@@ -488,6 +488,8 @@ export function createApp(options: CreateAppOptions = {}): AppController {
     enabled: config.auditEnabled,
     logFile: config.auditLogFile,
     getActor: (context) => dashboardAuth.getSession(context),
+    writeDatabase: (operation) => syncWorker.runExclusive(operation),
+    insertAuditStatement: database.insertAuditStatement,
   });
 
   const app = new Hono();
@@ -669,6 +671,8 @@ export function createApp(options: CreateAppOptions = {}): AppController {
   let isHeartbeatSchedulerRunning = false;
   let heartbeatPromise: Promise<void> | null = null;
   let heartbeatFailureLogged = false;
+  let auditRetentionTimer: ReturnType<typeof setInterval> | null = null;
+  let auditRetentionPurgeRunning = false;
   let bootstrapRetryTimeout: ReturnType<typeof setTimeout> | null = null;
   let bootstrapPromise: Promise<boolean> | null = null;
   let bootstrapSource: string | null = null;
@@ -1595,6 +1599,10 @@ export function createApp(options: CreateAppOptions = {}): AppController {
     startBackgroundTasks,
     stopBackgroundTasks: () => {
       pendingAlertDeletionStopped = true;
+      if (auditRetentionTimer) {
+        clearInterval(auditRetentionTimer);
+        auditRetentionTimer = null;
+      }
       stopRefreshScheduler();
       stopHeartbeatScheduler();
       clearPendingAlertDeletionTimeout();
@@ -1617,6 +1625,7 @@ export function createApp(options: CreateAppOptions = {}): AppController {
   };
 
   function startBackgroundTasks(): void {
+    startAuditRetentionPurge();
     if (!lapiClient.hasAuthConfig()) {
       console.warn('Cache initialization skipped - CrowdSec LAPI authentication not configured');
       return;
@@ -1629,6 +1638,28 @@ export function createApp(options: CreateAppOptions = {}): AppController {
     void ensureBootstrapReady('startup').then(() => {
       for (const instance of config.instances.slice(1)) scheduleInstanceRefresh(instance.id);
     });
+  }
+
+  function startAuditRetentionPurge(): void {
+    if (auditRetentionTimer || !Number.isInteger(config.auditEventsRetentionDays) || config.auditEventsRetentionDays < 1) return;
+
+    const purge = async () => {
+      if (auditRetentionPurgeRunning) return;
+      auditRetentionPurgeRunning = true;
+      try {
+        const before = new Date(Date.now() - config.auditEventsRetentionDays * 24 * 60 * 60 * 1000).toISOString();
+        const purged = await syncWorker.runExclusive(() => database.purgeAuditEvents(before));
+        if (purged > 0) console.log(`[audit] Purged ${purged} event(s) older than ${config.auditEventsRetentionDays} day(s).`);
+      } catch (error) {
+        console.error(`Failed to purge expired audit events: ${(error as Error).message}`);
+      } finally {
+        auditRetentionPurgeRunning = false;
+      }
+    };
+
+    void purge();
+    auditRetentionTimer = setInterval(() => void purge(), 24 * 60 * 60 * 1000);
+    auditRetentionTimer.unref();
   }
 
 }

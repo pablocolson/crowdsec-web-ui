@@ -379,6 +379,8 @@ export class CrowdsecDatabase {
   private readonly markAllNotificationsReadStatement: any;
   private readonly deleteReadNotificationsStatement: any;
   private readonly countUnreadNotificationsStatement: any;
+  private readonly listAuditEventsStatement: any;
+  private readonly countAuditEventsStatement: any;
   private readonly getCveCacheEntryStatement: any;
   private readonly upsertCveCacheEntryStatement: any;
   private readonly deleteAlertSearchIndexStatement: any | null;
@@ -387,6 +389,12 @@ export class CrowdsecDatabase {
   private readonly deleteDecisionSearchRowStatement: any | null;
   private readonly insertDecisionSearchIndexStatement: any | null;
   private readonly upsertDecisionSearchRowStatement: any | null;
+  readonly insertAuditStatement: any;
+  private readonly upsertAlertInvestigationStatement: any;
+  private readonly getAlertInvestigationStatement: any;
+  private readonly listAlertInvestigationsStatement: any;
+  private readonly listAlertInvestigationNotesStatement: any;
+  private readonly insertAlertInvestigationNoteStatement: any;
 
   constructor(options: DatabaseOptions = {}) {
     const resolvedPath = resolveDatabasePath(options);
@@ -795,6 +803,25 @@ export class CrowdsecDatabase {
     `);
     this.deleteReadNotificationsStatement = this.db.query('DELETE FROM notifications WHERE read_at IS NOT NULL');
     this.countUnreadNotificationsStatement = this.db.query('SELECT COUNT(*) as count FROM notifications WHERE read_at IS NULL');
+    this.listAuditEventsStatement = this.db.query(`
+      SELECT id, time, user, role, action, outcome, details_json, targets_json
+      FROM audit_events
+      WHERE ($user IS NULL OR user = $user)
+        AND ($action IS NULL OR action = $action)
+        AND ($outcome IS NULL OR outcome = $outcome)
+        AND ($since IS NULL OR time >= $since)
+        AND ($until IS NULL OR time <= $until)
+      ORDER BY time DESC
+      LIMIT $limit OFFSET $offset
+    `);
+    this.countAuditEventsStatement = this.db.query(`
+      SELECT COUNT(*) as count FROM audit_events
+      WHERE ($user IS NULL OR user = $user)
+        AND ($action IS NULL OR action = $action)
+        AND ($outcome IS NULL OR outcome = $outcome)
+        AND ($since IS NULL OR time >= $since)
+        AND ($until IS NULL OR time <= $until)
+    `);
     this.getCveCacheEntryStatement = this.db.query(`
       SELECT id, published_at, fetched_at
       FROM cve_cache
@@ -833,6 +860,41 @@ export class CrowdsecDatabase {
           ON CONFLICT(decision_id) DO UPDATE SET fts_rowid = excluded.fts_rowid
         `)
       : null;
+    this.insertAuditStatement = this.db.query(`
+      INSERT INTO audit_events (time, user, role, action, outcome, details_json, targets_json)
+      VALUES ($time, $user, $role, $action, $outcome, $details_json, $targets_json)
+    `);
+    this.upsertAlertInvestigationStatement = this.db.query(`
+      INSERT INTO alert_investigations (alert_internal_id, status, assigned_to, ticket_ref, created_at, updated_at, created_by, updated_by)
+      VALUES ($alert_internal_id, $status, $assigned_to, $ticket_ref, $created_at, $updated_at, $created_by, $updated_by)
+      ON CONFLICT(alert_internal_id) DO UPDATE SET
+        status = excluded.status,
+        assigned_to = excluded.assigned_to,
+        ticket_ref = excluded.ticket_ref,
+        updated_at = excluded.updated_at,
+        updated_by = excluded.updated_by
+    `);
+    this.getAlertInvestigationStatement = this.db.query(`
+      SELECT alert_internal_id, status, assigned_to, ticket_ref, created_at, updated_at, created_by, updated_by
+      FROM alert_investigations
+      WHERE alert_internal_id = $alert_internal_id
+    `);
+    this.listAlertInvestigationsStatement = this.db.query(`
+      SELECT alert_internal_id, status, assigned_to, ticket_ref, created_at, updated_at, created_by, updated_by
+      FROM alert_investigations
+      WHERE status = $status
+      ORDER BY updated_at DESC
+    `);
+    this.listAlertInvestigationNotesStatement = this.db.query(`
+      SELECT id, alert_internal_id, content, author, created_at
+      FROM alert_investigation_notes
+      WHERE alert_internal_id = $alert_internal_id
+      ORDER BY created_at ASC
+    `);
+    this.insertAlertInvestigationNoteStatement = this.db.query(`
+      INSERT INTO alert_investigation_notes (alert_internal_id, content, author, created_at)
+      VALUES ($alert_internal_id, $content, $author, $created_at)
+    `);
   }
 
   close(): void {
@@ -1647,6 +1709,10 @@ export class CrowdsecDatabase {
     return changes;
   }
 
+  purgeAuditEvents(before: string): number {
+    return this.db.prepare('DELETE FROM audit_events WHERE time < ?').run(before).changes;
+  }
+
   getAlertDeletionTombstone(alertId: string | number): PendingAlertDeletionRow | null {
     return (this.db.prepare(`
       SELECT alert_id, decision_ids_json, requested_at, decisions_deleted_at,
@@ -2256,6 +2322,63 @@ export class CrowdsecDatabase {
     return (this.countUnreadNotificationsStatement.get() as CountRow).count;
   }
 
+  countAuditEvents(filters?: {
+    user?: string | null;
+    action?: string | null;
+    outcome?: string | null;
+    since?: string | null;
+    until?: string | null;
+  }): number {
+    return (this.countAuditEventsStatement.get({
+      $user: filters?.user ?? null,
+      $action: filters?.action ?? null,
+      $outcome: filters?.outcome ?? null,
+      $since: filters?.since ?? null,
+      $until: filters?.until ?? null,
+    }) as CountRow).count;
+  }
+
+  listAuditEventsPage(
+    offset: number,
+    limit: number,
+    filters?: {
+      user?: string | null;
+      action?: string | null;
+      outcome?: string | null;
+      since?: string | null;
+      until?: string | null;
+    },
+  ): Array<{
+    id: number;
+    time: string;
+    user: string;
+    role: string | null;
+    action: string;
+    outcome: string;
+    detailsJson: string | null;
+    targetsJson: string | null;
+  }> {
+    const rows = this.listAuditEventsStatement.all({
+      $offset: offset,
+      $limit: limit,
+      $user: filters?.user ?? null,
+      $action: filters?.action ?? null,
+      $outcome: filters?.outcome ?? null,
+      $since: filters?.since ?? null,
+      $until: filters?.until ?? null,
+    }) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      id: row.id as number,
+      time: row.time as string,
+      user: row.user as string,
+      role: (row.role as string) || null,
+      action: row.action as string,
+      outcome: row.outcome as string,
+      detailsJson: (row.details_json as string) || null,
+      targetsJson: (row.targets_json as string) || null,
+    }));
+  }
+
   getCveCacheEntry(id: string): JsonRow | null {
     return (this.getCveCacheEntryStatement.get({ $id: id }) as JsonRow | null) || null;
   }
@@ -2265,6 +2388,126 @@ export class CrowdsecDatabase {
       $id: id,
       $published_at: normalizeIsoTimestamp(publishedAt),
       $fetched_at: normalizeIsoTimestamp(fetchedAt),
+    });
+  }
+
+  insertAuditEvent(params: {
+    time: string;
+    user: string;
+    role: string | null;
+    action: string;
+    outcome: string;
+    detailsJson: string | null;
+    targetsJson: string | null;
+  }): void {
+    this.insertAuditStatement.run({
+      $time: params.time,
+      $user: params.user,
+      $role: params.role,
+      $action: params.action,
+      $outcome: params.outcome,
+      $details_json: params.detailsJson,
+      $targets_json: params.targetsJson,
+    });
+  }
+
+  upsertAlertInvestigation(params: {
+    alertInternalId: number;
+    status: string;
+    assignedTo: string | null;
+    ticketRef: string | null;
+    createdAt: string;
+    updatedAt: string;
+    createdBy: string;
+    updatedBy: string;
+  }): void {
+    this.upsertAlertInvestigationStatement.run({
+      $alert_internal_id: params.alertInternalId,
+      $status: params.status,
+      $assigned_to: params.assignedTo,
+      $ticket_ref: params.ticketRef,
+      $created_at: params.createdAt,
+      $updated_at: params.updatedAt,
+      $created_by: params.createdBy,
+      $updated_by: params.updatedBy,
+    });
+  }
+
+  getAlertInvestigation(alertInternalId: number): {
+    alertInternalId: number;
+    status: string;
+    assignedTo: string | null;
+    ticketRef: string | null;
+    createdAt: string;
+    updatedAt: string;
+    createdBy: string;
+    updatedBy: string;
+  } | null {
+    const row = this.getAlertInvestigationStatement.get({ $alert_internal_id: alertInternalId }) as Record<string, unknown> | null;
+    if (!row) return null;
+    return {
+      alertInternalId: row.alert_internal_id as number,
+      status: row.status as string,
+      assignedTo: (row.assigned_to as string) || null,
+      ticketRef: (row.ticket_ref as string) || null,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+      createdBy: row.created_by as string,
+      updatedBy: row.updated_by as string,
+    };
+  }
+
+  listAlertInvestigations(status: string): Array<{
+    alertInternalId: number;
+    status: string;
+    assignedTo: string | null;
+    ticketRef: string | null;
+    createdAt: string;
+    updatedAt: string;
+    createdBy: string;
+    updatedBy: string;
+  }> {
+    const rows = this.listAlertInvestigationsStatement.all({ $status: status }) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      alertInternalId: row.alert_internal_id as number,
+      status: row.status as string,
+      assignedTo: (row.assigned_to as string) || null,
+      ticketRef: (row.ticket_ref as string) || null,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+      createdBy: row.created_by as string,
+      updatedBy: row.updated_by as string,
+    }));
+  }
+
+  listAlertInvestigationNotes(alertInternalId: number): Array<{
+    id: number;
+    alertInternalId: number;
+    content: string;
+    author: string;
+    createdAt: string;
+  }> {
+    const rows = this.listAlertInvestigationNotesStatement.all({ $alert_internal_id: alertInternalId }) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      id: row.id as number,
+      alertInternalId: row.alert_internal_id as number,
+      content: row.content as string,
+      author: row.author as string,
+      createdAt: row.created_at as string,
+    }));
+  }
+
+  insertAlertInvestigationNote(params: {
+    alertInternalId: number;
+    content: string;
+    author: string;
+    createdAt: string;
+  }): void {
+    this.insertAlertInvestigationNoteStatement.run({
+      $alert_internal_id: params.alertInternalId,
+      $content: params.content,
+      $author: params.author,
+      $created_at: params.createdAt,
     });
   }
 
@@ -2727,6 +2970,49 @@ function initSchema(db: Database, freshDatabase: boolean): boolean {
       ON pending_alert_deletions(completed_at, delete_after, requested_at);
   `;
 
+  const createAuditEventsTable = `
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      time TEXT NOT NULL,
+      user TEXT NOT NULL,
+      role TEXT,
+      action TEXT NOT NULL,
+      outcome TEXT NOT NULL,
+      details_json TEXT,
+      targets_json TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_events_time ON audit_events(time DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_user ON audit_events(user);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_action ON audit_events(action);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_outcome ON audit_events(outcome);
+  `;
+
+  const createAlertInvestigationsTable = `
+    CREATE TABLE IF NOT EXISTS alert_investigations (
+      alert_internal_id INTEGER PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'new',
+      assigned_to TEXT,
+      ticket_ref TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      updated_by TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_alert_investigations_status ON alert_investigations(status);
+    CREATE INDEX IF NOT EXISTS idx_alert_investigations_assigned ON alert_investigations(assigned_to);
+  `;
+
+  const createAlertInvestigationNotesTable = `
+    CREATE TABLE IF NOT EXISTS alert_investigation_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      alert_internal_id INTEGER NOT NULL REFERENCES alert_investigations(alert_internal_id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      author TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_alert_investigation_notes_alert ON alert_investigation_notes(alert_internal_id);
+  `;
+
   db.exec(createAlertsTable);
   db.exec(createMetaTable);
   db.exec(`
@@ -2741,6 +3027,9 @@ function initSchema(db: Database, freshDatabase: boolean): boolean {
   db.exec(createNotificationIncidentsTable);
   db.exec(createCveCacheTable);
   db.exec(createPendingAlertDeletionsTable);
+  db.exec(createAuditEventsTable);
+  db.exec(createAlertInvestigationsTable);
+  db.exec(createAlertInvestigationNotesTable);
 
   const tableInfo = db.query('PRAGMA table_info(decisions)').all() as Array<{ name: string; type: string }>;
   const idColumn = tableInfo.find((column) => column.name === 'id');

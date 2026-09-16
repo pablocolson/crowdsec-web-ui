@@ -141,5 +141,5 @@ ENTRYPOINT ["docker-loadtest-entrypoint.sh"]
 CMD ["node", "dist/server/load-test-server.js"]
 
 
-# Keep the regular image as the default target for plain `docker build` calls.
+# Keep the production image as the default target for plain `docker build` calls.
 FROM runner AS production

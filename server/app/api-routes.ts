@@ -397,6 +397,140 @@ app.get(`${config.basePath}/api/alerts/:id`, ensureAuth, ensurePublishedRevision
   }
 });
 
+app.patch(`${config.basePath}/api/alerts/:id/investigation`, ensureAuth, async (context) => {
+  const readOnlyResponse = ensureCanManageSettings(context);
+  if (readOnlyResponse) return readOnlyResponse;
+
+  const alertId = String(context.req.param('id'));
+  if (!/^\d+$/.test(alertId)) return context.json({ error: 'Invalid alert ID' }, 400);
+
+  const session = dashboardAuth.getSession(context);
+  if (!session) return context.json({ error: 'Not authenticated' }, 401);
+
+  let body: { status?: string; assigned_to?: string | null; ticket_ref?: string | null; instance_id?: string };
+  try {
+    body = await context.req.json();
+  } catch {
+    return context.json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  const instanceId = config.instances.length === 1 ? config.instances[0].id : body.instance_id;
+  if (!instanceId) return context.json({ error: 'instance_id is required' }, 400);
+  if (!config.instances.some((instance) => instance.id === instanceId)) return context.json({ error: 'Unknown instance' }, 404);
+
+  const internalAlertId = database.getAlertInternalId(instanceId, alertId);
+  if (!internalAlertId) return context.json({ error: 'Alert not found in local database. Sync it first.' }, 404);
+
+  const validStatuses = ['new', 'in_progress', 'resolved'];
+  if (body.status !== undefined && !validStatuses.includes(body.status)) {
+    return context.json({ error: `status must be one of: ${validStatuses.join(', ')}` }, 400);
+  }
+
+  const existing = database.getAlertInvestigation(internalAlertId);
+  const now = new Date().toISOString();
+  const username = session.username;
+
+  database.upsertAlertInvestigation({
+    alertInternalId: internalAlertId,
+    status: body.status ?? existing?.status ?? 'new',
+    assignedTo: body.assigned_to !== undefined ? body.assigned_to : existing?.assignedTo ?? null,
+    ticketRef: body.ticket_ref !== undefined ? body.ticket_ref : existing?.ticketRef ?? null,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    createdBy: existing?.createdBy ?? username,
+    updatedBy: username,
+  });
+
+  auditLog.record(context, {
+    action: 'investigation.update',
+    alert_id: alertId,
+    status: body.status ?? 'unchanged',
+    assigned_to: body.assigned_to,
+    ticket_ref: body.ticket_ref,
+    outcome: 'success',
+  });
+
+  const updated = database.getAlertInvestigation(internalAlertId)!;
+  const notes = database.listAlertInvestigationNotes(internalAlertId);
+  return context.json({ investigation: updated, notes });
+});
+
+app.get(`${config.basePath}/api/alerts/:id/investigation`, ensureAuth, async (context) => {
+  const alertId = String(context.req.param('id'));
+  if (!/^\d+$/.test(alertId)) return context.json({ error: 'Invalid alert ID' }, 400);
+
+  const requestedInstanceId = context.req.query('instance_id');
+  const instanceId = config.instances.length === 1 ? config.instances[0].id : requestedInstanceId;
+  if (!instanceId) return context.json({ error: 'instance_id is required' }, 400);
+  if (!config.instances.some((instance) => instance.id === instanceId)) return context.json({ error: 'Unknown instance' }, 404);
+
+  const internalAlertId = database.getAlertInternalId(instanceId, alertId);
+  if (!internalAlertId) return context.json({ error: 'Alert not found in local database. Sync it first.' }, 404);
+
+  const investigation = database.getAlertInvestigation(internalAlertId);
+  const notes = database.listAlertInvestigationNotes(internalAlertId);
+  return context.json({ investigation, notes });
+});
+
+app.post(`${config.basePath}/api/alerts/:id/investigation/notes`, ensureAuth, async (context) => {
+  const readOnlyResponse = ensureCanManageSettings(context);
+  if (readOnlyResponse) return readOnlyResponse;
+
+  const alertId = String(context.req.param('id'));
+  if (!/^\d+$/.test(alertId)) return context.json({ error: 'Invalid alert ID' }, 400);
+
+  const session = dashboardAuth.getSession(context);
+  if (!session) return context.json({ error: 'Not authenticated' }, 401);
+
+  let body: { content: string; instance_id?: string };
+  try {
+    body = await context.req.json();
+  } catch {
+    return context.json({ error: 'Invalid JSON body' }, 400);
+  }
+
+  const instanceId = config.instances.length === 1 ? config.instances[0].id : body.instance_id;
+  if (!instanceId) return context.json({ error: 'instance_id is required' }, 400);
+  if (!config.instances.some((instance) => instance.id === instanceId)) return context.json({ error: 'Unknown instance' }, 404);
+
+  const internalAlertId = database.getAlertInternalId(instanceId, alertId);
+  if (!internalAlertId) return context.json({ error: 'Alert not found in local database. Sync it first.' }, 404);
+
+  if (!body.content || typeof body.content !== 'string' || body.content.trim().length === 0) {
+    return context.json({ error: 'content is required and must be non-empty' }, 400);
+  }
+
+  const now = new Date().toISOString();
+  database.insertAlertInvestigationNote({
+    alertInternalId: internalAlertId,
+    content: body.content.trim(),
+    author: session.username,
+    createdAt: now,
+  });
+
+  auditLog.record(context, {
+    action: 'investigation.note_added',
+    alert_id: alertId,
+    note_length: body.content.trim().length,
+    outcome: 'success',
+  });
+
+  const notes = database.listAlertInvestigationNotes(internalAlertId);
+  return context.json({ notes }, 201);
+});
+
+app.get(`${config.basePath}/api/investigations`, ensureAuth, async (context) => {
+  const session = dashboardAuth.getSession(context);
+  if (!session) return context.json({ error: 'Not authenticated' }, 401);
+
+  const { status } = context.req.query() as { status?: string };
+  const validStatuses = ['new', 'in_progress', 'resolved'];
+  const filterStatus = status && validStatuses.includes(status) ? status : 'new';
+
+  const investigations = database.listAlertInvestigations(filterStatus);
+  return context.json({ investigations, status: filterStatus });
+});
+
 app.delete(`${config.basePath}/api/alerts/:id`, ensureAuth, async (context) => {
   if (config.instances.length > 1) return context.json({ error: 'instance_id is required when multiple CrowdSec instances are configured' }, 400);
   const readOnlyResponse = ensureCanManageEnforcement(context);
@@ -630,6 +764,61 @@ function buildInstanceSummary(instance: RuntimeConfig['instances'][number]) {
     archived: metadata.archived,
   };
 }
+
+function computeInstanceHealth(instanceId: string) {
+  const lapiStatus = lapiClients.get(instanceId)?.getStatus();
+  const sync = instanceSyncStatuses.get(instanceId) || syncStatus;
+  const lapiConnected = lapiStatus?.isConnected ?? false;
+  const syncComplete = sync.state === 'complete' && !sync.isSyncing;
+  const lastSyncAt = sync.completedAt || sync.startedAt || null;
+  const lastError = lapiStatus?.lastError || (sync.errors?.length ? sync.errors[0] : null);
+  const alertsCount = database.countAlerts(instanceId);
+  const decisionsCount = database.countDecisions(instanceId);
+
+  let state: 'healthy' | 'degraded' | 'offline' | 'unknown' = 'unknown';
+  if (!lapiConnected) {
+    state = 'offline';
+  } else if (sync.isSyncing || sync.state === 'failed') {
+    state = 'degraded';
+  } else if (sync.state === 'partial' || lastError) {
+    state = 'degraded';
+  } else if (syncComplete) {
+    state = 'healthy';
+  }
+
+  return {
+    state,
+    lapi: lapiStatus ?? { isConnected: false, lastCheck: null, lastError: null, offline_since: null },
+    sync: {
+      isSyncing: sync.isSyncing,
+      state: sync.state,
+      startedAt: sync.startedAt,
+      completedAt: sync.completedAt,
+      errors: sync.errors,
+    },
+    lastSyncAt,
+    lastError,
+    alertsCount,
+    decisionsCount,
+  };
+}
+
+app.get(`${config.basePath}/api/instances/:instanceId/health`, ensureAuth, async (context) => {
+  const instanceId = String(context.req.param('instanceId'));
+  const instance = config.instances.find((c) => c.id === instanceId);
+  if (!instance) return context.json({ error: 'Unknown instance' }, 404);
+
+  const health = computeInstanceHealth(instanceId);
+  return context.json(health);
+});
+
+app.get(`${config.basePath}/api/instances/health`, ensureAuth, async (context) => {
+  const summaries = config.instances.map((instance) => {
+    const health = computeInstanceHealth(instance.id);
+    return { id: instance.id, name: instance.name, icon: instance.icon, ...health };
+  });
+  return context.json({ instances: summaries });
+});
 
 app.get(`${config.basePath}/api/config`, ensureAuth, (context) => {
   const hours = lookbackHours(config.lookbackPeriod);
@@ -1098,6 +1287,65 @@ app.delete(`${config.basePath}/api/notifications/:id`, ensureAuth, async (contex
 });
 
 app.get(`${config.basePath}/api/notifications/settings`, ensureAuth, () => Response.json(notificationService.listSettings()));
+
+app.get(`${config.basePath}/api/audit-events`, ensureAuth, async (context) => {
+  const session = dashboardAuth.getSession(context);
+  if (!session) return context.json({ error: 'Not authenticated' }, 401);
+  if (session.role !== 'admin') return context.json({ error: 'Admin required', code: 'FORBIDDEN' }, 403);
+
+  const {
+    offset: offsetStr, limit: limitStr, format,
+    action, outcome, user, since, until,
+    max_events: maxEventsStr,
+  } = context.req.query() as Record<string, string>;
+
+  const filters = {
+    action: action || null,
+    outcome: outcome || null,
+    user: user || null,
+    since: since || null,
+    until: until || null,
+  };
+
+  const isExport = format === 'csv' || format === 'json';
+  const exportLimit = isExport
+    ? Math.min(10000, Math.max(1, parseInt(maxEventsStr || '1000', 10)))
+    : undefined;
+  const offset = isExport ? 0 : Math.max(0, parseInt(offsetStr || '0', 10));
+  const limit = isExport ? exportLimit! : Math.min(1000, Math.max(1, parseInt(limitStr || '50', 10)));
+
+  const total = database.countAuditEvents(filters);
+  const rows = database.listAuditEventsPage(offset, limit, filters);
+  const events = rows.map((row) => ({
+    id: row.id,
+    time: row.time,
+    user: row.user,
+    role: row.role,
+    action: row.action,
+    outcome: row.outcome,
+    details: row.detailsJson ? JSON.parse(row.detailsJson) : {},
+    targets: row.targetsJson ? JSON.parse(row.targetsJson) : null,
+  }));
+
+  if (format === 'csv') {
+    const csvHeader = 'id,time,user,role,action,outcome';
+    const csvRows = events.map((e) =>
+      [e.id, e.time, `"${e.user}"`, e.role ? `"${e.role}"` : '', `"${e.action}"`, `"${e.outcome}"`].join(','),
+    );
+    const csv = [csvHeader, ...csvRows].join('\n');
+    context.header('Content-Type', 'text/csv');
+    context.header('Content-Disposition', `attachment; filename="audit-events-${new Date().toISOString().slice(0, 10)}.csv"`);
+    return context.body(csv);
+  }
+
+  if (format === 'json') {
+    context.header('Content-Type', 'application/json');
+    context.header('Content-Disposition', `attachment; filename="audit-events-${new Date().toISOString().slice(0, 10)}.json"`);
+    return context.body(JSON.stringify({ events, total }, null, 2));
+  }
+
+  return context.json({ events, total, offset, limit });
+});
 
 app.post(`${config.basePath}/api/notification-channels`, ensureAuth, async (context) => {
   const readOnlyResponse = ensureCanManageSettings(context);

@@ -27,8 +27,11 @@ import type {
   UpdateManualRefreshSettingRequest,
   UpsertNotificationChannelRequest,
   UpsertNotificationRuleRequest,
+  AuditEventsResponse,
+  InstancesHealthResponse,
+  InvestigationResponse,
 } from '../types';
-import { apiUrl } from './basePath';
+import { apiUrl, getBasePath } from './basePath';
 import { sessionFetch } from './sessionFetch';
 
 const inFlightGetRequests = new Map<string, Promise<unknown>>();
@@ -498,4 +501,78 @@ export async function bulkDeleteNotifications(ids: BulkDeleteRequest['ids']): Pr
 
 export async function deleteReadNotifications(): Promise<void> {
     await sendJson('/api/notifications/delete-read', { method: 'POST' }, 'Failed to delete read notifications');
+}
+
+export async function fetchAuditEvents(params?: {
+    offset?: number;
+    limit?: number;
+    action?: string;
+    outcome?: string;
+    user?: string;
+    since?: string;
+    until?: string;
+}): Promise<AuditEventsResponse> {
+    const searchParams = new URLSearchParams();
+    if (params?.offset !== undefined) searchParams.set('offset', String(params.offset));
+    if (params?.limit !== undefined) searchParams.set('limit', String(params.limit));
+    if (params?.action) searchParams.set('action', params.action);
+    if (params?.outcome) searchParams.set('outcome', params.outcome);
+    if (params?.user) searchParams.set('user', params.user);
+    if (params?.since) searchParams.set('since', params.since);
+    if (params?.until) searchParams.set('until', params.until);
+    return fetchJson<AuditEventsResponse>(`/api/audit-events?${searchParams.toString()}`, undefined, 'Failed to fetch audit events');
+}
+
+export function getAuditEventsExportUrl(params?: {
+    format?: 'csv' | 'json';
+    max_events?: number;
+    action?: string;
+    outcome?: string;
+    user?: string;
+    since?: string;
+    until?: string;
+}): string {
+    const basePath = getBasePath() || '';
+    const searchParams = new URLSearchParams();
+    searchParams.set('format', params?.format || 'csv');
+    if (params?.max_events) searchParams.set('max_events', String(params.max_events));
+    if (params?.action) searchParams.set('action', params.action);
+    if (params?.outcome) searchParams.set('outcome', params.outcome);
+    if (params?.user) searchParams.set('user', params.user);
+    if (params?.since) searchParams.set('since', params.since);
+    if (params?.until) searchParams.set('until', params.until);
+  return `${basePath}/api/audit-events?${searchParams.toString()}`;
+}
+
+export async function fetchInstancesHealth(): Promise<InstancesHealthResponse> {
+  return fetchJson<InstancesHealthResponse>('/api/instances/health', undefined, 'Failed to fetch instance health');
+}
+
+export async function fetchAlertInvestigation(alertId: string | number, instanceId?: string): Promise<InvestigationResponse> {
+  const searchParams = new URLSearchParams();
+  if (instanceId) searchParams.set('instance_id', instanceId);
+  const query = searchParams.size > 0 ? `?${searchParams.toString()}` : '';
+  return fetchJson<InvestigationResponse>(`/api/alerts/${encodeURIComponent(String(alertId))}/investigation${query}`, undefined, 'Failed to fetch investigation');
+}
+
+export async function updateAlertInvestigation(
+  alertId: string | number,
+  data: { status: 'new' | 'in_progress' | 'resolved'; assigned_to?: string | null; ticket_ref?: string | null; instance_id?: string },
+): Promise<InvestigationResponse> {
+  return sendJson<InvestigationResponse>(`/api/alerts/${encodeURIComponent(String(alertId))}/investigation`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }, 'Failed to update investigation');
+}
+
+export async function addAlertInvestigationNote(
+  alertId: string | number,
+  data: { content: string; instance_id?: string },
+): Promise<{ notes: InvestigationResponse['notes'] }> {
+  return sendJson<{ notes: InvestigationResponse['notes'] }>(`/api/alerts/${encodeURIComponent(String(alertId))}/investigation/notes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }, 'Failed to add investigation note');
 }

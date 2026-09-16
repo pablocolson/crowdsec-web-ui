@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { SecurityEngineCard } from '../SecurityEngineCard';
-import type { InstanceSummary } from '../../types';
+import type { InstanceHealth, InstanceSummary } from '../../types';
 
 function sampleInstance(overrides: Partial<InstanceSummary> = {}): InstanceSummary {
     return {
@@ -30,10 +30,10 @@ function sampleInstance(overrides: Partial<InstanceSummary> = {}): InstanceSumma
     };
 }
 
-function renderCard(instance: InstanceSummary) {
+function renderCard(instance: InstanceSummary, health?: InstanceHealth) {
     return render(
         <MemoryRouter>
-            <SecurityEngineCard instance={instance} colorIndex={0} />
+            <SecurityEngineCard instance={instance} colorIndex={0} health={health} />
         </MemoryRouter>,
     );
 }
@@ -67,5 +67,20 @@ describe('SecurityEngineCard', () => {
         expect(screen.getByText('production')).toBeInTheDocument();
         expect(screen.getByText('edge')).toBeInTheDocument();
         expect(screen.getByText('Archived')).toBeInTheDocument();
+    });
+
+    test('shows computed health state and its last error', () => {
+        renderCard(sampleInstance(), {
+            state: 'degraded',
+            lapi: { isConnected: true, lastCheck: null, lastError: null, offline_since: null },
+            sync: { isSyncing: false, state: 'failed', startedAt: null, completedAt: null },
+            lastSyncAt: null,
+            lastError: 'sync failed',
+            alertsCount: 12,
+            decisionsCount: 3,
+        });
+
+        expect(screen.getByText('Degraded')).toBeInTheDocument();
+        expect(screen.getByText('sync failed')).toBeInTheDocument();
     });
 });

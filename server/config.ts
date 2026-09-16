@@ -98,6 +98,7 @@ export interface RuntimeConfig {
   readOnly: boolean;
   auditEnabled: boolean;
   auditLogFile?: string;
+  auditEventsRetentionDays: number;
   dashboardAuth: DashboardAuthConfig;
   instances: CrowdsecInstanceConfig[];
 }
@@ -437,6 +438,7 @@ function createRuntimeConfigFromEnvironment(env: NodeJS.ProcessEnv): RuntimeConf
     readOnly: parseBooleanEnv(env.PERMISSION_READ_ONLY, false),
     auditEnabled: parseBooleanEnv(env.AUDIT_ENABLED, true),
     auditLogFile: env.AUDIT_LOG_FILE?.trim() || undefined,
+    auditEventsRetentionDays: parseInt(env.AUDIT_EVENTS_RETENTION_DAYS ?? '30', 10),
     dashboardAuth: parseDashboardAuthConfig(env),
     instances: [],
   };

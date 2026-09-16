@@ -5,10 +5,11 @@ import { MemoryRouter } from 'react-router-dom';
 import { SecurityEngines } from '../SecurityEngines';
 import type { ConfigResponse, InstanceSummary } from '../../types';
 
-const { fetchConfigMock } = vi.hoisted(() => ({ fetchConfigMock: vi.fn() }));
+const { fetchConfigMock, fetchInstancesHealthMock } = vi.hoisted(() => ({ fetchConfigMock: vi.fn(), fetchInstancesHealthMock: vi.fn() }));
 
 vi.mock('../../lib/api', () => ({
     fetchConfig: fetchConfigMock,
+    fetchInstancesHealth: fetchInstancesHealthMock,
 }));
 
 vi.mock('../../contexts/useRefresh', () => ({
@@ -17,6 +18,8 @@ vi.mock('../../contexts/useRefresh', () => ({
 
 beforeEach(() => {
     fetchConfigMock.mockReset();
+    fetchInstancesHealthMock.mockReset();
+    fetchInstancesHealthMock.mockResolvedValue({ instances: [] });
 });
 
 function sampleInstance(overrides: Partial<InstanceSummary> = {}): InstanceSummary {
@@ -110,6 +113,14 @@ describe('SecurityEngines page', () => {
 
     test('switches to table view and shows tabular data', async () => {
         fetchConfigMock.mockResolvedValue(configWith([sampleInstance({ id: 'default', name: 'CrowdSec' })]));
+        fetchInstancesHealthMock.mockResolvedValue({
+            instances: [{
+                id: 'default', name: 'CrowdSec', state: 'degraded', icon: undefined,
+                lapi: { isConnected: true, lastCheck: null, lastError: null, offline_since: null },
+                sync: { isSyncing: false, state: 'failed', startedAt: null, completedAt: null },
+                lastSyncAt: null, lastError: 'sync failed', alertsCount: 5, decisionsCount: 2,
+            }],
+        });
         const user = userEvent.setup();
         renderPage();
         await screen.findByRole('link', { name: /CrowdSec/ });
@@ -119,6 +130,7 @@ describe('SecurityEngines page', () => {
         const table = await screen.findByRole('table');
         expect(table).toBeInTheDocument();
         expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument();
+        expect(screen.getByText('Degraded')).toBeInTheDocument();
     });
 
     test('reloads when the config request fails, without crashing', async () => {

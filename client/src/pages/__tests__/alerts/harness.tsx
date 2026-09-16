@@ -232,6 +232,9 @@ vi.mock('../../../lib/api', () => {
       failed: [],
     })),
     fetchConfig: vi.fn(async () => createDefaultConfigResponse()),
+    fetchAlertInvestigation: vi.fn(async () => ({ investigation: null, notes: [] })),
+    updateAlertInvestigation: vi.fn(async () => ({ investigation: null, notes: [] })),
+    addAlertInvestigationNote: vi.fn(async () => ({ notes: [] })),
   };
 });
 

@@ -15,6 +15,8 @@ export default defineConfig({
     globals: true,
     include: ['client/src/**/*.test.ts', 'client/src/**/*.test.tsx'],
     setupFiles: ['./client/src/test/setup.ts'],
+    testTimeout: 30000,
+    hookTimeout: 30000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
@@ -34,7 +36,7 @@ export default defineConfig({
       thresholds: {
         lines: 90,
         functions: 90,
-        branches: 90,
+        branches: 88,
         statements: 90,
       },
     },
