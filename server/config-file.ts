@@ -241,9 +241,10 @@ export function parseApplicationConfig(parsed: unknown, sourceEnv: NodeJS.Proces
   setBoolean(env, notifications, 'debugPayloads', 'NOTIFICATION_DEBUG_PAYLOADS', 'notifications');
 
   const audit = section(root, 'audit');
-  knownKeys(audit, ['enabled', 'logFile'], 'audit');
+  knownKeys(audit, ['enabled', 'logFile', 'eventsRetentionDays'], 'audit');
   setBoolean(env, audit, 'enabled', 'AUDIT_ENABLED', 'audit');
   setString(env, audit, 'logFile', 'AUDIT_LOG_FILE', 'audit', true);
+  setInteger(env, audit, 'eventsRetentionDays', 'AUDIT_EVENTS_RETENTION_DAYS', 'audit');
 
   const updates = section(root, 'updates');
   knownKeys(updates, ['enabled'], 'updates');
@@ -560,6 +561,7 @@ export function generateApplicationConfig(env: NodeJS.ProcessEnv, config: Runtim
     audit: {
       enabled: config.auditEnabled,
       ...(config.auditLogFile ? { logFile: config.auditLogFile } : {}),
+      eventsRetentionDays: config.auditEventsRetentionDays,
     },
     updates: { enabled: config.updateCheckEnabled },
     crowdsec: {

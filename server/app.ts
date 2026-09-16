@@ -488,6 +488,9 @@ export function createApp(options: CreateAppOptions = {}): AppController {
     enabled: config.auditEnabled,
     logFile: config.auditLogFile,
     getActor: (context) => dashboardAuth.getSession(context),
+    writeDatabase: (operation) => syncWorker.runExclusive(operation),
+    insertAuditStatement: database.insertAuditStatement,
+    auditEventsRetentionDays: config.auditEventsRetentionDays,
   });
 
   const app = new Hono();

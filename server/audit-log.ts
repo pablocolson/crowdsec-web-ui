@@ -26,10 +26,13 @@ export interface CreateAuditLoggerOptions {
   enabled: boolean;
   logFile?: string;
   getActor: (context: HonoContext) => AuditActor | null;
+  writeDatabase?: (operation: () => void) => void;
+  insertAuditStatement?: { run: (params: Record<string, unknown>) => void };
+  auditEventsRetentionDays?: number;
 }
 
 export function createAuditLogger(options: CreateAuditLoggerOptions): AuditLogger {
-  const { enabled, logFile, getActor } = options;
+  const { enabled, logFile, getActor, writeDatabase, insertAuditStatement, auditEventsRetentionDays } = options;
   let fileWritable = Boolean(logFile);
 
   if (enabled && logFile) {
@@ -44,21 +47,57 @@ export function createAuditLogger(options: CreateAuditLoggerOptions): AuditLogge
   function record(context: HonoContext, event: AuditEvent): void {
     if (!enabled) return;
 
+    const actor = getActor(context);
+    const time = new Date().toISOString();
+    const entry = {
+      time,
+      user: actor?.username || 'unknown',
+      ...(actor?.role ? { role: actor.role } : {}),
+      ...event,
+    };
+    const line = JSON.stringify(entry);
+
     // Audit logging must never break the user action it describes.
     try {
-      const actor = getActor(context);
-      const line = JSON.stringify({
-        time: new Date().toISOString(),
-        user: actor?.username || 'unknown',
-        ...(actor?.role ? { role: actor.role } : {}),
-        ...event,
-      });
       console.log(`[audit] ${line}`);
+    } catch (error) {
+      console.error(`Failed to write audit log entry: ${(error as Error).message}`);
+    }
+
+    try {
       if (logFile && fileWritable) {
         fs.appendFileSync(logFile, `${line}\n`, 'utf8');
       }
     } catch (error) {
-      console.error(`Failed to write audit log entry: ${(error as Error).message}`);
+      console.error(`Failed to write audit log entry to file: ${(error as Error).message}`);
+    }
+
+    if (writeDatabase && insertAuditStatement) {
+      const detailsJson = (() => {
+        const { action, outcome, ...rest } = entry;
+        return JSON.stringify(rest);
+      })();
+      const targetsJson = (() => {
+        const e = entry as Record<string, unknown>;
+        if (Array.isArray(e.alert_ids)) return JSON.stringify({ alert_ids: e.alert_ids });
+        if (Array.isArray(e.decision_ids)) return JSON.stringify({ decision_ids: e.decision_ids });
+        return null;
+      })();
+      try {
+        writeDatabase(() => {
+          insertAuditStatement.run({
+            $time: time,
+            $user: actor?.username || 'unknown',
+            $role: actor?.role || null,
+            $action: entry.action,
+            $outcome: entry.outcome,
+            $details_json: detailsJson,
+            $targets_json: targetsJson,
+          });
+        });
+      } catch (error) {
+        console.error(`Failed to persist audit event to database: ${(error as Error).message}`);
+      }
     }
   }
 

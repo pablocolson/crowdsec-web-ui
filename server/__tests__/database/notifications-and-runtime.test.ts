@@ -195,6 +195,47 @@ describe('CrowdsecDatabase notifications and runtime', () => {
     db.close();
   });
 
+  test('inserts and lists audit events with details and targets', () => {
+    const db = createTestDatabase();
+
+    db.insertAuditEvent({
+      time: '2025-06-01T12:00:00.000Z',
+      user: 'tommy',
+      role: 'admin',
+      action: 'decision.delete',
+      outcome: 'success',
+      detailsJson: JSON.stringify({ ip: '1.2.3.4', reason: 'manual' }),
+      targetsJson: JSON.stringify({ decision_ids: ['10', '11'] }),
+    });
+    db.insertAuditEvent({
+      time: '2025-06-01T12:01:00.000Z',
+      user: 'alice',
+      role: 'operator',
+      action: 'alert.delete',
+      outcome: 'partial',
+      detailsJson: JSON.stringify({ alert_ids: ['5'] }),
+      targetsJson: null,
+    });
+
+    expect(db.countAuditEvents()).toBe(2);
+
+    const page = db.listAuditEventsPage(0, 10);
+    expect(page).toHaveLength(2);
+    expect(page[0].user).toBe('alice');
+    expect(page[0].action).toBe('alert.delete');
+    expect(JSON.parse(page[0].detailsJson!)).toEqual({ alert_ids: ['5'] });
+    expect(page[0].targetsJson).toBeNull();
+    expect(page[1].user).toBe('tommy');
+    expect(page[1].action).toBe('decision.delete');
+    expect(JSON.parse(page[1].targetsJson!)).toEqual({ decision_ids: ['10', '11'] });
+
+    const pageOffset = db.listAuditEventsPage(1, 1);
+    expect(pageOffset).toHaveLength(1);
+    expect(pageOffset[0].user).toBe('tommy');
+
+    db.close();
+  });
+
   test('checkpoints WAL data on close so settings survive container recreation', () => {
     const dbPath = createTestDatabasePath();
     const db = new CrowdsecDatabase({ dbPath });

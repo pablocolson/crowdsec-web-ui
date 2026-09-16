@@ -1099,6 +1099,32 @@ app.delete(`${config.basePath}/api/notifications/:id`, ensureAuth, async (contex
 
 app.get(`${config.basePath}/api/notifications/settings`, ensureAuth, () => Response.json(notificationService.listSettings()));
 
+app.get(`${config.basePath}/api/audit-events`, ensureAuth, async (context) => {
+  const session = dashboardAuth.getSession(context);
+  if (!session) return context.json({ error: 'Not authenticated' }, 401);
+  if (session.role !== 'admin') return context.json({ error: 'Admin required', code: 'FORBIDDEN' }, 403);
+
+  const { offset: offsetStr, limit: limitStr, action, outcome, user, since, until } = context.req.query() as Record<string, string>;
+  const offset = Math.max(0, parseInt(offsetStr || '0', 10));
+  const limit = Math.min(1000, Math.max(1, parseInt(limitStr || '50', 10)));
+
+  const total = database.countAuditEvents();
+
+  const rows = database.listAuditEventsPage(offset, limit);
+  const events = rows.map((row) => ({
+    id: row.id,
+    time: row.time,
+    user: row.user,
+    role: row.role,
+    action: row.action,
+    outcome: row.outcome,
+    details: row.detailsJson ? JSON.parse(row.detailsJson) : {},
+    targets: row.targetsJson ? JSON.parse(row.targetsJson) : null,
+  }));
+
+  return context.json({ events, total, offset, limit });
+});
+
 app.post(`${config.basePath}/api/notification-channels`, ensureAuth, async (context) => {
   const readOnlyResponse = ensureCanManageSettings(context);
   if (readOnlyResponse) return readOnlyResponse;

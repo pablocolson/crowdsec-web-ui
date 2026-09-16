@@ -379,6 +379,8 @@ export class CrowdsecDatabase {
   private readonly markAllNotificationsReadStatement: any;
   private readonly deleteReadNotificationsStatement: any;
   private readonly countUnreadNotificationsStatement: any;
+  private readonly listAuditEventsStatement: any;
+  private readonly countAuditEventsStatement: any;
   private readonly getCveCacheEntryStatement: any;
   private readonly upsertCveCacheEntryStatement: any;
   private readonly deleteAlertSearchIndexStatement: any | null;
@@ -387,6 +389,7 @@ export class CrowdsecDatabase {
   private readonly deleteDecisionSearchRowStatement: any | null;
   private readonly insertDecisionSearchIndexStatement: any | null;
   private readonly upsertDecisionSearchRowStatement: any | null;
+  readonly insertAuditStatement: any;
 
   constructor(options: DatabaseOptions = {}) {
     const resolvedPath = resolveDatabasePath(options);
@@ -795,6 +798,13 @@ export class CrowdsecDatabase {
     `);
     this.deleteReadNotificationsStatement = this.db.query('DELETE FROM notifications WHERE read_at IS NOT NULL');
     this.countUnreadNotificationsStatement = this.db.query('SELECT COUNT(*) as count FROM notifications WHERE read_at IS NULL');
+    this.listAuditEventsStatement = this.db.query(`
+      SELECT id, time, user, role, action, outcome, details_json, targets_json
+      FROM audit_events
+      ORDER BY time DESC
+      LIMIT $limit OFFSET $offset
+    `);
+    this.countAuditEventsStatement = this.db.query('SELECT COUNT(*) as count FROM audit_events');
     this.getCveCacheEntryStatement = this.db.query(`
       SELECT id, published_at, fetched_at
       FROM cve_cache
@@ -833,6 +843,10 @@ export class CrowdsecDatabase {
           ON CONFLICT(decision_id) DO UPDATE SET fts_rowid = excluded.fts_rowid
         `)
       : null;
+    this.insertAuditStatement = this.db.query(`
+      INSERT INTO audit_events (time, user, role, action, outcome, details_json, targets_json)
+      VALUES ($time, $user, $role, $action, $outcome, $details_json, $targets_json)
+    `);
   }
 
   close(): void {
@@ -2256,6 +2270,33 @@ export class CrowdsecDatabase {
     return (this.countUnreadNotificationsStatement.get() as CountRow).count;
   }
 
+  countAuditEvents(): number {
+    return (this.countAuditEventsStatement.get() as CountRow).count;
+  }
+
+  listAuditEventsPage(offset: number, limit: number): Array<{
+    id: number;
+    time: string;
+    user: string;
+    role: string | null;
+    action: string;
+    outcome: string;
+    detailsJson: string | null;
+    targetsJson: string | null;
+  }> {
+    const rows = this.listAuditEventsStatement.all({ $offset: offset, $limit: limit }) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      id: row.id as number,
+      time: row.time as string,
+      user: row.user as string,
+      role: (row.role as string) || null,
+      action: row.action as string,
+      outcome: row.outcome as string,
+      detailsJson: (row.details_json as string) || null,
+      targetsJson: (row.targets_json as string) || null,
+    }));
+  }
+
   getCveCacheEntry(id: string): JsonRow | null {
     return (this.getCveCacheEntryStatement.get({ $id: id }) as JsonRow | null) || null;
   }
@@ -2265,6 +2306,26 @@ export class CrowdsecDatabase {
       $id: id,
       $published_at: normalizeIsoTimestamp(publishedAt),
       $fetched_at: normalizeIsoTimestamp(fetchedAt),
+    });
+  }
+
+  insertAuditEvent(params: {
+    time: string;
+    user: string;
+    role: string | null;
+    action: string;
+    outcome: string;
+    detailsJson: string | null;
+    targetsJson: string | null;
+  }): void {
+    this.insertAuditStatement.run({
+      $time: params.time,
+      $user: params.user,
+      $role: params.role,
+      $action: params.action,
+      $outcome: params.outcome,
+      $details_json: params.detailsJson,
+      $targets_json: params.targetsJson,
     });
   }
 
@@ -2727,6 +2788,23 @@ function initSchema(db: Database, freshDatabase: boolean): boolean {
       ON pending_alert_deletions(completed_at, delete_after, requested_at);
   `;
 
+  const createAuditEventsTable = `
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      time TEXT NOT NULL,
+      user TEXT NOT NULL,
+      role TEXT,
+      action TEXT NOT NULL,
+      outcome TEXT NOT NULL,
+      details_json TEXT,
+      targets_json TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_events_time ON audit_events(time DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_user ON audit_events(user);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_action ON audit_events(action);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_outcome ON audit_events(outcome);
+  `;
+
   db.exec(createAlertsTable);
   db.exec(createMetaTable);
   db.exec(`
@@ -2741,6 +2819,7 @@ function initSchema(db: Database, freshDatabase: boolean): boolean {
   db.exec(createNotificationIncidentsTable);
   db.exec(createCveCacheTable);
   db.exec(createPendingAlertDeletionsTable);
+  db.exec(createAuditEventsTable);
 
   const tableInfo = db.query('PRAGMA table_info(decisions)').all() as Array<{ name: string; type: string }>;
   const idColumn = tableInfo.find((column) => column.name === 'id');
