@@ -43,7 +43,6 @@ describe('CopyableText', () => {
         const writeText = stubClipboard();
         const onParentClick = vi.fn();
         render(
-            // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
             <div onClick={onParentClick}>
                 <CopyableText value="1.2.3.4" />
             </div>,
